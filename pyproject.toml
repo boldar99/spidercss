@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "spidercss"
+version = "0.1.0"
+description = "A package for Spider CSS quantum error correction codes."
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "pyzx",
+    "scipy",
+    "matplotlib",
+    "networkx",
+    "pytket",
+    "python-sat",
+    "joblib",
+    "seaborn",
+    "pandas",
+    "qiskit",
+    "galois",
+    "tesseract-decoder",
+    "stim~=1.16.dev",
+    "sinter~=1.16.dev",
+    "numpy",
+    "spidercat @ git+https://github.com/boldar99/spidercat.git"
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["spidercss", "spidercss.*"]
+
+[tool.setuptools.package-data]
+"spidercss" = ["**/*.json"]
+
+[project.urls]
+Homepage = "https://github.com/boldar99/spidercss"
