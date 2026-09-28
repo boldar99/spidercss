@@ -10,7 +10,36 @@ from spidercss.css_state import prepare_css_state
 class PrepareCssStateTest(unittest.TestCase):
     @patch("spidercss.css_state.row_optimized_cat_at_origin")
     @patch("spidercss.css_state.load_qecc")
-    def test_compiles_bell_state_and_keeps_data_qubits_first(
+    def test_lifts_bell_stabilizers_and_prepares_one_joint_state(
+        self, load_qecc, prepare_joint_state
+    ):
+        h = np.array([[1, 1, 0]], dtype=np.int8)
+        logical = np.array([[0, 0, 1]], dtype=np.int8)
+        load_qecc.return_value = True, h, h, logical, logical, 3
+        prepare_joint_state.return_value = stim.Circuit("R 0")
+
+        circuit = prepare_css_state(
+            stim.Circuit("M 0\nMX 1\nCX 1 0"), "test_code"
+        )
+
+        expected_x_stabilizers = np.array(
+            [
+                [1, 1, 0, 0, 0, 0],
+                [0, 0, 0, 1, 1, 0],
+                [0, 0, 1, 0, 0, 1],
+            ],
+            dtype=np.int8,
+        )
+        np.testing.assert_array_equal(
+            prepare_joint_state.call_args.args[0], expected_x_stabilizers
+        )
+        self.assertEqual(prepare_joint_state.call_args.args[1], 3)
+        self.assertEqual(prepare_joint_state.call_args.kwargs["basis"], "Z")
+        self.assertEqual(circuit, stim.Circuit("R 0"))
+
+    @patch("spidercss.css_state.row_optimized_cat_at_origin")
+    @patch("spidercss.css_state.load_qecc")
+    def test_transversal_alternative_keeps_data_qubits_first(
         self, load_qecc, prepare_block
     ):
         h = np.array([[1, 1]], dtype=np.int8)
@@ -27,7 +56,9 @@ class PrepareCssStateTest(unittest.TestCase):
         prepare_block.side_effect = make_block
         logical_state = stim.Circuit("M 0\nMX 1\nCX 1 0")
 
-        circuit = prepare_css_state(logical_state, "test_code")
+        circuit = prepare_css_state(
+            logical_state, "test_code", strategy="local"
+        )
 
         self.assertEqual(circuit.num_qubits, 6)
         self.assertEqual(
@@ -50,6 +81,12 @@ class PrepareCssStateTest(unittest.TestCase):
     def test_rejects_unsupported_operations(self):
         with self.assertRaisesRegex(ValueError, "Unsupported logical operation 'H'"):
             prepare_css_state(stim.Circuit("H 0"), "test_code")
+
+    def test_rejects_unknown_strategy(self):
+        with self.assertRaisesRegex(ValueError, "'global' or 'local'"):
+            prepare_css_state(
+                stim.Circuit("R 0"), "test_code", strategy="distributed"
+            )
 
     def test_rejects_repeated_preparation(self):
         with self.assertRaisesRegex(ValueError, "prepared more than once"):

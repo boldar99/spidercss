@@ -3,14 +3,20 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Literal
 
+import numpy as np
 import stim
 
 from spidercss.cat_at_origin import row_optimized_cat_at_origin
 from spidercss.utils import load_qecc
 
 
-__all__ = ["prepare_css_state"]
+__all__ = [
+    "encoded_css_stabilizers",
+    "prepare_css_state",
+    "prepare_css_state_transversally",
+]
 
 
 _PREPARATION_BASES = {
@@ -27,6 +33,34 @@ class _LogicalOperation:
     targets: tuple[int, ...]
 
 
+def encoded_css_stabilizers(
+    logical_state: stim.Circuit,
+    code: str,
+    *,
+    method: str | None = None,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Lift a logical CSS stabilizer state into physical X and Z stabilizers.
+
+    Block-local code stabilizers are lifted with ``I_m (x) H``, while each
+    logical-state stabilizer is lifted by replacing its X or Z on a block with
+    the corresponding logical operator of the code.
+    """
+    operations, num_logical_qubits = _parse_logical_state(logical_state)
+    h_x, h_z, l_x, l_z, _ = _load_single_logical_code(code, method)
+    logical_h_x, logical_h_z = _logical_css_stabilizers(
+        operations, num_logical_qubits
+    )
+    return _lift_css_stabilizers(
+        logical_h_x,
+        logical_h_z,
+        h_x,
+        h_z,
+        l_x,
+        l_z,
+        num_logical_qubits,
+    )
+
+
 def prepare_css_state(
     logical_state: stim.Circuit,
     code: str,
@@ -36,17 +70,19 @@ def prepare_css_state(
     analyze_hook_errors: bool = True,
     routing_heuristic: str = "critical_path_first",
     is_perfect_code: bool = False,
+    preparation_basis: str = "Z",
+    strategy: Literal["global", "local"] = "global",
 ) -> stim.Circuit:
-    """Compile a logical CSS-state description into a fault-tolerant circuit.
+    """Prepare an encoded CSS state using a global or local construction.
 
     Each qubit in ``logical_state`` denotes one encoded block of an ``[[n, 1, d]]``
     CSS code. ``M``/``R`` prepare logical ``|0>`` and ``MX``/``RX`` prepare
     logical ``|+>``. The measurement spellings are declarative aliases: their
-    measurement results do not appear in the returned circuit. ``CX`` is compiled
-    into a transversal CNOT between two prepared blocks.
-
-    The returned circuit numbers all data qubits first. Physical qubit ``p`` of
-    logical block ``q`` is ``q * n + p``; preparation ancillas follow the data.
+    measurement results do not appear in the returned circuit. With the global
+    strategy, the logical stabilizers are encoded and synthesized as one larger
+    cat-at-origin state. With the local strategy, each code block is prepared
+    separately before logical CNOTs are applied transversally. Physical qubit
+    ``p`` of logical block ``q`` is ``q * n + p``.
 
     Args:
         logical_state: A Stim circuit containing only M, MX, R, RX, and CX.
@@ -56,24 +92,79 @@ def prepare_css_state(
         analyze_hook_errors: Whether to use safe stabilizer splits when available.
         routing_heuristic: Edge-routing heuristic passed to ``cat_at_origin``.
         is_perfect_code: Enables the existing perfect-code cat-state optimization.
+        preparation_basis: ``"Z"`` synthesizes from the encoded X stabilizers;
+            ``"X"`` synthesizes from the encoded Z stabilizers. Used only by
+            the global strategy.
+        strategy: ``"global"`` for one joint preparation or ``"local"`` for
+            separate block preparations followed by transversal logical CNOTs.
 
     Returns:
         A Stim circuit preparing the requested encoded CSS state.
 
     Raises:
         ValueError: If the logical circuit is not a state-preparation program or
-            the selected code does not encode exactly one logical qubit.
+            the strategy is invalid, or the selected code does not encode exactly
+            one logical qubit.
     """
-    operations, num_logical_qubits = _parse_logical_state(logical_state)
-    _, h_x, h_z, l_x, _, distance = load_qecc(code, method)
-
-    if h_x.shape[1] != h_z.shape[1]:
-        raise ValueError("H_x and H_z must act on the same number of qubits.")
-    if l_x.ndim != 2 or l_x.shape[0] != 1:
-        raise ValueError(
-            f"prepare_css_state requires an [[n, 1, d]] code; {code!r} has "
-            f"{l_x.shape[0] if l_x.ndim == 2 else 'an unknown number of'} logical qubits."
+    if strategy == "local":
+        return prepare_css_state_transversally(
+            logical_state,
+            code,
+            method=method,
+            max_basis_tries=max_basis_tries,
+            analyze_hook_errors=analyze_hook_errors,
+            routing_heuristic=routing_heuristic,
+            is_perfect_code=is_perfect_code,
         )
+    if strategy != "global":
+        raise ValueError("strategy must be either 'global' or 'local'.")
+
+    operations, num_logical_qubits = _parse_logical_state(logical_state)
+    h_x, h_z, l_x, l_z, distance = _load_single_logical_code(code, method)
+    logical_h_x, logical_h_z = _logical_css_stabilizers(
+        operations, num_logical_qubits
+    )
+    encoded_h_x, encoded_h_z = _lift_css_stabilizers(
+        logical_h_x,
+        logical_h_z,
+        h_x,
+        h_z,
+        l_x,
+        l_z,
+        num_logical_qubits,
+    )
+
+    if preparation_basis == "Z":
+        parity_matrix = encoded_h_x
+    elif preparation_basis == "X":
+        parity_matrix = encoded_h_z
+    else:
+        raise ValueError("preparation_basis must be either 'Z' or 'X'.")
+
+    return row_optimized_cat_at_origin(
+        parity_matrix,
+        distance,
+        basis=preparation_basis,
+        max_basis_tries=max_basis_tries,
+        analyze_hook_errors=analyze_hook_errors,
+        routing_heuristic=routing_heuristic,
+        is_perfect_code=is_perfect_code,
+    )
+
+
+def prepare_css_state_transversally(
+    logical_state: stim.Circuit,
+    code: str,
+    *,
+    method: str | None = None,
+    max_basis_tries: int = 10_000,
+    analyze_hook_errors: bool = True,
+    routing_heuristic: str = "critical_path_first",
+    is_perfect_code: bool = False,
+) -> stim.Circuit:
+    """Prepare separate code blocks and apply each logical CX transversally."""
+    operations, num_logical_qubits = _parse_logical_state(logical_state)
+    h_x, h_z, _, _, distance = _load_single_logical_code(code, method)
 
     num_physical_qubits = h_x.shape[1]
     next_ancilla = num_logical_qubits * num_physical_qubits
@@ -125,6 +216,100 @@ def prepare_css_state(
             result.append("CX", physical_targets)
 
     return result
+
+
+def _load_single_logical_code(
+    code: str, method: str | None
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, int]:
+    _, h_x, h_z, l_x, l_z, distance = load_qecc(code, method)
+
+    if h_x.ndim != 2 or h_z.ndim != 2 or h_x.shape[1] != h_z.shape[1]:
+        raise ValueError("H_x and H_z must be matrices on the same number of qubits.")
+    if (
+        l_x.ndim != 2
+        or l_z.ndim != 2
+        or l_x.shape[0] != 1
+        or l_z.shape[0] != 1
+    ):
+        num_logical_qubits = l_x.shape[0] if l_x.ndim == 2 else "unknown"
+        raise ValueError(
+            f"CSS state preparation requires an [[n, 1, d]] code; {code!r} has "
+            f"{num_logical_qubits} logical qubits."
+        )
+    if l_x.shape[1] != h_x.shape[1] or l_z.shape[1] != h_x.shape[1]:
+        raise ValueError("Logical operators and stabilizers must have equal width.")
+
+    return h_x, h_z, l_x, l_z, distance
+
+
+def _logical_css_stabilizers(
+    operations: list[_LogicalOperation], num_logical_qubits: int
+) -> tuple[np.ndarray, np.ndarray]:
+    deterministic_state = stim.Circuit()
+    for operation in operations:
+        if operation.name in _PREPARATION_BASES:
+            reset = "R" if _PREPARATION_BASES[operation.name] == "Z" else "RX"
+            deterministic_state.append(reset, operation.targets)
+        else:
+            deterministic_state.append("CX", operation.targets)
+
+    simulator = stim.TableauSimulator()
+    simulator.do(deterministic_state)
+
+    x_stabilizers = []
+    z_stabilizers = []
+    for stabilizer in simulator.canonical_stabilizers():
+        x_support, z_support = stabilizer.to_numpy()
+        has_x = bool(np.any(x_support))
+        has_z = bool(np.any(z_support))
+        if has_x and has_z:
+            raise ValueError(
+                "The logical circuit did not produce a CSS stabilizer state."
+            )
+        if stabilizer.sign != 1:
+            raise ValueError(
+                "The logical circuit produced a negative stabilizer; only the "
+                "+1 CSS state is supported."
+            )
+        (x_stabilizers if has_x else z_stabilizers).append(
+            (x_support if has_x else z_support).astype(np.int8)
+        )
+
+    logical_h_x = np.array(x_stabilizers, dtype=np.int8).reshape(
+        -1, num_logical_qubits
+    )
+    logical_h_z = np.array(z_stabilizers, dtype=np.int8).reshape(
+        -1, num_logical_qubits
+    )
+    return logical_h_x, logical_h_z
+
+
+def _lift_css_stabilizers(
+    logical_h_x: np.ndarray,
+    logical_h_z: np.ndarray,
+    h_x: np.ndarray,
+    h_z: np.ndarray,
+    l_x: np.ndarray,
+    l_z: np.ndarray,
+    num_logical_qubits: int,
+) -> tuple[np.ndarray, np.ndarray]:
+    block_identity = np.eye(num_logical_qubits, dtype=np.int8)
+    encoded_h_x = np.vstack(
+        [
+            np.kron(block_identity, h_x),
+            np.kron(logical_h_x, l_x),
+        ]
+    ).astype(np.int8)
+    encoded_h_z = np.vstack(
+        [
+            np.kron(block_identity, h_z),
+            np.kron(logical_h_z, l_z),
+        ]
+    ).astype(np.int8)
+
+    if np.any(encoded_h_x @ encoded_h_z.T % 2):
+        raise ValueError("The lifted X and Z stabilizers do not commute.")
+    return encoded_h_x, encoded_h_z
 
 
 def _parse_logical_state(
