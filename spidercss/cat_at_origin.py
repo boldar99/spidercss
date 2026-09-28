@@ -12,8 +12,7 @@ from spidercss.hook_errors import characterize_stabilizer_splits, get_exact_part
 from spidercss.spider_leg_matcher import match_edges
 from spidercss.utils import find_pivots_in_matrix, load_qecc, count_operations, flatten, get_conj_M
 from spidercss.well_ordered_cat_state import well_ordered_ft_cat_state_data, well_ordered_composite_cat_state_data
-from spidercss.optimize_parity_matrix import has_unique_ones_property, optimize_fault_tolerant_matrix, \
-    row_optimize_matrix, minimum_number_of_flags, cnot_cost
+from spidercss.optimize_parity_matrix import has_unique_ones_property, row_optimize_matrix
 
 
 def row_optimized_cat_at_origin(H: np.ndarray, d: int, basis="Z", max_basis_tries: int = 10_000, analyze_hook_errors=False, routing_heuristic="critical_path_first", is_perfect_code=False):
@@ -240,4 +239,3 @@ if __name__ == "__main__":
     print(f"Total Qubits: {final_circ.num_qubits}")
     print(f"Num CX: {count_operations(final_circ)[0]}")
     print(f"Total instructions: {sum(count_operations(final_circ))}")
-

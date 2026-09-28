@@ -19,7 +19,7 @@ import networkx as nx
 import numpy as np
 from matplotlib import pyplot as plt
 
-from spidercat.circuit_extraction import (
+from spidercss.circuit_extraction import (
     build_traversal_digraph,
     expand_graph_and_forest,
     resolve_dag_by_removing_missing_link,
