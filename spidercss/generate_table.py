@@ -221,7 +221,14 @@ def main():
         
         for i, row in enumerate(group):
             strategy = row.get("strategy", "Unknown").replace("Strategy", "")
-            if strategy in ("AggressiveDepthAware", "PureAggressive"):
+            reuse_target = row.get("reuse_target")
+            if reuse_target:
+                strategy = {
+                    "qubits": r"Sim.\@ Qubit",
+                    "balanced": "Balanced",
+                    "depth": "Depth",
+                }.get(reuse_target, reuse_target)
+            elif strategy in ("AggressiveDepthAware", "PureAggressive"):
                 strategy = r"Sim.\@ Qubit"
             elif strategy == "DepthPreserving":
                 strategy = r"Depth"
@@ -276,6 +283,7 @@ def main():
                 "active_spider_first": "Active Spider",
                 "critical_path_first": r"Crit.\@ Path",
                 "sa_sequence_distance": r"Seq.\@ Dist.",
+                "joint_resource": "Joint",
             }
             cnot_scheduler_str = cnot_scheduler_dict.get(cnot_scheduler)
 
@@ -316,7 +324,7 @@ def export_to_excel(data, grouped_data, filename="simulation_results.xlsx"):
     
     # We want some columns to be first
     drop_rows = ("perfect_stim", "noisy_circuit", "num_qubits_original", "raw_acceptance_rate", "label")
-    first_cols = ["code", "Method", "n", "k", "d", "routing_heuristic", "strategy", "logical_error_rate", "acceptance_rate", "num_sim_qubits", "depth", "num_cx", "num_flags"]
+    first_cols = ["code", "Method", "n", "k", "d", "routing_heuristic", "strategy", "reuse_target", "logical_error_rate", "acceptance_rate", "num_sim_qubits", "depth", "num_cx", "num_flags"]
     other_cols = sorted([k for k in (keys - set(first_cols)) if k not in drop_rows])
     headers = first_cols + other_cols
     

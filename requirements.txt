@@ -3,6 +3,7 @@ numpy
 scipy
 matplotlib
 networkx
+ortools
 pytket
 python-sat
 stim

@@ -346,7 +346,9 @@ class CatStateExtractor:
         self.branch_mark_values[node] = children_mark_value + mark_value
         return children_mark_value + mark_value
 
-    def extract(self, G, F, roots, dependency_graph: nx.DiGraph | None = None, primary_paths: dict[int, list[int]] | None = None) -> stim.Circuit:
+    def extract(self, G, F, roots, dependency_graph: nx.DiGraph | None = None,
+                primary_paths: dict[int, list[int]] | None = None,
+                node_order: list[int] | None = None) -> stim.Circuit:
         if self.verbose: print("=== Starting Elegant Extraction (BFS) ===")
         roots = roots if isinstance(roots, dict) else {i: r for i, r in enumerate(roots)}
 
@@ -357,7 +359,18 @@ class CatStateExtractor:
         self.next_data_idx = 0
         self.next_flag_idx = N + num_data_flags
 
-        self.node_order = dependency_graph and flatten([gen + ["TICK"] for gen in nx.topological_generations(dependency_graph)]) or []
+        if node_order is not None:
+            if dependency_graph is not None:
+                position = {node: index for index, node in enumerate(node_order)}
+                if set(position) != set(dependency_graph.nodes):
+                    raise ValueError("Absolute extraction order must contain every dependency node exactly once.")
+                if any(position[u] >= position[v] for u, v in dependency_graph.edges):
+                    raise ValueError("Absolute extraction order is not topological.")
+            self.node_order = list(node_order)
+        else:
+            self.node_order = dependency_graph and flatten(
+                [gen + ["TICK"] for gen in nx.topological_generations(dependency_graph)]
+            ) or []
 
         for root in roots.values():
             self._compute_depth(root, None, F)

@@ -5,8 +5,6 @@ from typing import Literal, TYPE_CHECKING
 
 import pyzx as zx
 import stim
-import stimcirq
-from cirq.contrib.qasm_import import circuit_from_qasm
 
 from spidercss.utils import flatten
 
@@ -20,6 +18,11 @@ SPECIAL_GATES = {"DETECTOR", "OBSERVABLE_INCLUDE", "SHIFT_COORDS", "QUBIT_COORDS
 
 
 def qasm_str_to_stim_circuit(qasm_str: str) -> stim.Circuit:
+    # These are optional interoperability dependencies.  Importing them lazily
+    # keeps the core Stim scheduling utilities usable without stimcirq/cirq.
+    import stimcirq
+    from cirq.contrib.qasm_import import circuit_from_qasm
+
     cirq_circuit = circuit_from_qasm(qasm_str)
     return stimcirq.cirq_circuit_to_stim_circuit(cirq_circuit)
 
@@ -283,6 +286,28 @@ def get_circuit_depth(circ: stim.Circuit) -> int:
     expanded_ops = _expand_stim_operation_list(operations)
     layered_ops = _layer_circuit_ops(expanded_ops, circ.num_qubits)
     return len(layered_ops)
+
+
+def get_cnot_depth(circ: stim.Circuit) -> int:
+    """Returns ASAP two-qubit depth while preserving the circuit's CNOT order."""
+    next_free_layer: dict[int, int] = {}
+    max_layer = -1
+    for operation in circ.flattened():
+        if operation.name not in TWO_QUBIT_GATES:
+            continue
+        targets = operation.targets_copy()
+        for index in range(0, len(targets), 2):
+            pair = targets[index:index + 2]
+            # Classical feedback such as CX rec[-1] q is not a physical
+            # two-qubit gate and does not occupy a CNOT layer.
+            if len(pair) != 2 or not all(target.is_qubit_target for target in pair):
+                continue
+            q1, q2 = pair[0].value, pair[1].value
+            layer = max(next_free_layer.get(q1, 0), next_free_layer.get(q2, 0))
+            next_free_layer[q1] = layer + 1
+            next_free_layer[q2] = layer + 1
+            max_layer = max(max_layer, layer)
+    return max_layer + 1
 
 def get_circuit_width_per_timestep(circ: stim.Circuit) -> list[int]:
     """Returns the strict ASAP depth of the circuit."""

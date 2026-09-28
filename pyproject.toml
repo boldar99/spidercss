@@ -13,6 +13,7 @@ dependencies = [
     "scipy",
     "matplotlib",
     "networkx",
+    "ortools",
     "pytket",
     "python-sat",
     "joblib",

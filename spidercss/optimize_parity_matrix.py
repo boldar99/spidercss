@@ -76,7 +76,18 @@ def has_unique_ones_property(M: np.ndarray) -> bool:
     return len(found_rows) == M.shape[0]
 
 
-def row_optimize_matrix(M: np.ndarray, t: int, max_basis_tries: int = 1_000) -> tuple[float, np.ndarray]:
+def row_optimize_matrix(
+    M: np.ndarray,
+    t: int,
+    max_basis_tries: int = 1_000,
+    rng=None,
+) -> tuple[float, np.ndarray]:
+    """Finds a low-cost row basis.
+
+    Pass a NumPy-compatible random generator to make the search independent
+    of ambient global random state.  The default retains the historical
+    ``np.random`` behaviour for existing callers.
+    """
     r, c = M.shape
     
     GF2 = galois.GF(2)
@@ -93,7 +104,7 @@ def row_optimize_matrix(M: np.ndarray, t: int, max_basis_tries: int = 1_000) -> 
     cols_arr = np.arange(c)
 
     for _ in range(max_basis_tries):
-        np.random.shuffle(cols_arr)
+        (np.random if rng is None else rng).shuffle(cols_arr)
         
         A_perm = GF2(M[:, cols_arr]).row_reduce()
         A_k_perm = np.array(A_perm[:k])

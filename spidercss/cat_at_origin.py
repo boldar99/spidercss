@@ -1,27 +1,33 @@
-import itertools
-
 import matplotlib.pyplot as plt
 import networkx as nx
 import numpy as np
 import stim
-from tqdm import tqdm
 
 from spidercss.circuit_extraction import CatStateExtractor, StimBuilder
 from spidercss.draw import draw_forest_on_graph, display_digraph
 from spidercss.hook_errors import characterize_stabilizer_splits, get_exact_partial_splits
 from spidercss.spider_leg_matcher import match_edges
-from spidercss.utils import find_pivots_in_matrix, load_qecc, count_operations, flatten, get_conj_M
+from spidercss.utils import find_pivots_in_matrix, load_qecc, count_operations, get_conj_M
 from spidercss.well_ordered_cat_state import well_ordered_ft_cat_state_data, well_ordered_composite_cat_state_data
 from spidercss.optimize_parity_matrix import has_unique_ones_property, row_optimize_matrix
+from spidercss.joint_extraction_planner import plan_joint_extraction, materialize_matching
+from spidercss.resource_targets import ReuseTarget
 
 
-def row_optimized_cat_at_origin(H: np.ndarray, d: int, basis="Z", max_basis_tries: int = 10_000, analyze_hook_errors=False, routing_heuristic="critical_path_first", is_perfect_code=False):
+def row_optimized_cat_at_origin(H: np.ndarray, d: int, basis="Z", max_basis_tries: int = 10_000,
+                                analyze_hook_errors=False, is_perfect_code=False,
+                                reuse_target: ReuseTarget | str = ReuseTarget.QUBITS):
     t = (d - 1) // 2
-    best_row_op_cost, matrix_after_row_ops = row_optimize_matrix(H, t, max_basis_tries)
-    return cat_at_origin(matrix_after_row_ops, d, basis=basis, analyze_hook_errors=analyze_hook_errors, routing_heuristic=routing_heuristic, is_perfect_code=is_perfect_code)
+    _, matrix_after_row_ops = row_optimize_matrix(H, t, max_basis_tries)
+    return cat_at_origin(
+        matrix_after_row_ops, d, basis=basis, analyze_hook_errors=analyze_hook_errors,
+        is_perfect_code=is_perfect_code, reuse_target=reuse_target
+    )
 
 
-def cat_at_origin(H: np.ndarray, d: int, draw_solutions=False, basis="Z", analyze_hook_errors=False, routing_heuristic="critical_path_first", hook_results=None, is_perfect_code=False) -> stim.Circuit:
+def cat_at_origin(H: np.ndarray, d: int, draw_solutions=False, basis="Z", *,
+                  analyze_hook_errors=False, _hook_results=None, is_perfect_code=False,
+                  reuse_target: ReuseTarget | str = ReuseTarget.QUBITS) -> stim.Circuit:
     if not has_unique_ones_property(H):
         raise ValueError(f"H is not representing a bipartite graph state.")
 
@@ -35,13 +41,13 @@ def cat_at_origin(H: np.ndarray, d: int, draw_solutions=False, basis="Z", analyz
 
     M_prep = get_conj_M(H)
     if analyze_hook_errors:
-        hook_results = hook_results or characterize_stabilizer_splits(M_prep)
+        _hook_results = _hook_results or characterize_stabilizer_splits(M_prep)
 
     x_splits = []
     for j, p in enumerate(non_pivots):
         supp = tuple(np.where(M_prep[j] == 1)[0].tolist())
-        if analyze_hook_errors and supp in hook_results:
-            results = hook_results[supp]
+        if analyze_hook_errors and supp in _hook_results:
+            results = _hook_results[supp]
             if results.get("universal"):
                 # Pick the first universal shape
                 shape = results["universal"][0]
@@ -130,7 +136,8 @@ def cat_at_origin(H: np.ndarray, d: int, draw_solutions=False, basis="Z", analyz
                 )
 
     matched_edges = match_edges(
-        H, non_pivots, z_digraphs, x_digraphs, z_candidates, x_candidates, edge_groups=edge_groups, routing_heuristic=routing_heuristic
+        H, non_pivots, z_digraphs, x_digraphs, z_candidates, x_candidates,
+        edge_groups=edge_groups
     )
 
     # Build global graphs
@@ -187,22 +194,35 @@ def cat_at_origin(H: np.ndarray, d: int, draw_solutions=False, basis="Z", analyz
         else:
             j += 1
 
-    # Phase 1: Connecting the cat states in the global graphs
-    while matched_edges:
-        (z_graph, x_graph), (z_val, x_val) = matched_edges.pop(0)
-        global_G.add_edge(z_node_mapping[(z_graph, z_val)], x_node_mapping[(x_graph, x_val)], edge_type="cnot")
-        global_G.nodes[z_node_mapping[(z_graph, z_val)]]["is_mark"] = False
-        global_G.nodes[x_node_mapping[(x_graph, x_val)]]["is_mark"] = False
+    # Connect the CAT states.  The joint planner searches nearby logical-edge
+    # orders, which simultaneously changes the selected ports, the induced DAG,
+    # and the resource-aware absolute traversal order.
+    joint_plan = plan_joint_extraction(
+        initial_matching=matched_edges,
+        z_candidates=z_candidates,
+        x_candidates=x_candidates,
+        edge_groups=edge_groups,
+        base_graph=global_G,
+        forest=global_F,
+        base_dag=global_D,
+        z_node_mapping=z_node_mapping,
+        x_node_mapping=x_node_mapping,
+        z_digraphs=z_digraphs,
+        x_digraphs=x_digraphs,
+        target=reuse_target,
+    )
+    matched_edges = joint_plan.matched_edges
 
-        if global_F.degree(z_node_mapping[(z_graph, z_val)]) == 1 and global_D.in_degree(z_node_mapping[(z_graph, z_val)]) > 0:
-            global_G.nodes[z_node_mapping[(z_graph, z_val)]]["is_flag"] = True
-        if global_F.degree(x_node_mapping[(x_graph, x_val)]) == 1 and global_D.in_degree(x_node_mapping[(x_graph, x_val)]) > 0:
-            global_G.nodes[x_node_mapping[(x_graph, x_val)]]["is_flag"] = True
-
-        for u, _ in z_digraphs[z_graph].in_edges(z_val):
-            global_D.add_edge(z_node_mapping[(z_graph, u)], x_node_mapping[(x_graph, x_val)], edge_type="cnot")
-        for u, _ in x_digraphs[x_graph].in_edges(x_val):
-            global_D.add_edge(x_node_mapping[(x_graph, u)], z_node_mapping[(z_graph, z_val)], edge_type="cnot")
+    global_G, global_D = materialize_matching(
+        global_G,
+        global_F,
+        global_D,
+        matched_edges,
+        z_node_mapping,
+        x_node_mapping,
+        z_digraphs,
+        x_digraphs,
+    )
 
     # Extract circuit using the global graphs
     extractor = CatStateExtractor(StimBuilder(), verbose=False)
@@ -211,7 +231,10 @@ def cat_at_origin(H: np.ndarray, d: int, draw_solutions=False, basis="Z", analyz
         plt.show()
         display_digraph(global_D, figsize=(8, 8))
         plt.show()
-    circ = extractor.extract(global_G, global_F, global_roots, global_D, global_primary_paths)
+    circ = extractor.extract(
+        global_G, global_F, global_roots, global_D, global_primary_paths,
+        node_order=joint_plan.node_order
+    )
     return circ
 
 
@@ -232,7 +255,7 @@ if __name__ == "__main__":
         L_x, L_z = L_z, L_x
 
     final_circ = row_optimized_cat_at_origin(
-        H=H_x, d=d, basis=basis, analyze_hook_errors=True, routing_heuristic="critical_path_first"
+        H=H_x, d=d, basis=basis, analyze_hook_errors=True
     )
 
     print("\n--- Final Fault Tolerant Verification Circuit ---")

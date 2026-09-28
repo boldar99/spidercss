@@ -9,6 +9,7 @@ import numpy as np
 import stim
 
 from spidercss.cat_at_origin import row_optimized_cat_at_origin
+from spidercss.resource_targets import ReuseTarget
 from spidercss.utils import load_qecc
 
 
@@ -68,8 +69,8 @@ def prepare_css_state(
     method: str | None = None,
     max_basis_tries: int = 10_000,
     analyze_hook_errors: bool = True,
-    routing_heuristic: str = "critical_path_first",
     is_perfect_code: bool = False,
+    reuse_target: ReuseTarget | str = ReuseTarget.QUBITS,
     preparation_basis: str = "Z",
     strategy: Literal["global", "local"] = "global",
 ) -> stim.Circuit:
@@ -90,8 +91,8 @@ def prepare_css_state(
         method: Optional code-library name, such as ``"FAO"`` or ``"MQT"``.
         max_basis_tries: Number of row bases considered for each preparation.
         analyze_hook_errors: Whether to use safe stabilizer splits when available.
-        routing_heuristic: Edge-routing heuristic passed to ``cat_at_origin``.
         is_perfect_code: Enables the existing perfect-code cat-state optimization.
+        reuse_target: Optimize for ``"qubits"``, ``"depth"``, or ``"balanced"``.
         preparation_basis: ``"Z"`` synthesizes from the encoded X stabilizers;
             ``"X"`` synthesizes from the encoded Z stabilizers. Used only by
             the global strategy.
@@ -113,8 +114,8 @@ def prepare_css_state(
             method=method,
             max_basis_tries=max_basis_tries,
             analyze_hook_errors=analyze_hook_errors,
-            routing_heuristic=routing_heuristic,
             is_perfect_code=is_perfect_code,
+            reuse_target=reuse_target,
         )
     if strategy != "global":
         raise ValueError("strategy must be either 'global' or 'local'.")
@@ -147,8 +148,8 @@ def prepare_css_state(
         basis=preparation_basis,
         max_basis_tries=max_basis_tries,
         analyze_hook_errors=analyze_hook_errors,
-        routing_heuristic=routing_heuristic,
         is_perfect_code=is_perfect_code,
+        reuse_target=reuse_target,
     )
 
 
@@ -159,8 +160,8 @@ def prepare_css_state_transversally(
     method: str | None = None,
     max_basis_tries: int = 10_000,
     analyze_hook_errors: bool = True,
-    routing_heuristic: str = "critical_path_first",
     is_perfect_code: bool = False,
+    reuse_target: ReuseTarget | str = ReuseTarget.QUBITS,
 ) -> stim.Circuit:
     """Prepare separate code blocks and apply each logical CX transversally."""
     operations, num_logical_qubits = _parse_logical_state(logical_state)
@@ -182,8 +183,8 @@ def prepare_css_state_transversally(
                     basis=basis,
                     max_basis_tries=max_basis_tries,
                     analyze_hook_errors=analyze_hook_errors,
-                    routing_heuristic=routing_heuristic,
                     is_perfect_code=is_perfect_code,
+                    reuse_target=reuse_target,
                 )
 
             template = templates[basis]
