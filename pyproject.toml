@@ -27,6 +27,9 @@ dependencies = [
     "spidercat @ git+https://github.com/boldar99/spidercat.git"
 ]
 
+[tool.setuptools]
+include-package-data = true
+
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["spidercss", "spidercss.*"]

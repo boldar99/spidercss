@@ -1,0 +1,2 @@
+recursive-include spidercss/cat_states_data *.json
+recursive-include spidercss/qeccs *.json
