@@ -16,18 +16,20 @@ from spidercss.resource_targets import ReuseTarget
 
 def row_optimized_cat_at_origin(H: np.ndarray, d: int, basis="Z", max_basis_tries: int = 10_000,
                                 analyze_hook_errors=False, is_perfect_code=False,
-                                reuse_target: ReuseTarget | str = ReuseTarget.QUBITS):
+                                reuse_target: ReuseTarget | str = ReuseTarget.QUBITS,
+                                routing_heuristic: str = "critical_path_first"):
     t = (d - 1) // 2
     _, matrix_after_row_ops = row_optimize_matrix(H, t, max_basis_tries)
     return cat_at_origin(
         matrix_after_row_ops, d, basis=basis, analyze_hook_errors=analyze_hook_errors,
-        is_perfect_code=is_perfect_code, reuse_target=reuse_target
+        is_perfect_code=is_perfect_code, reuse_target=reuse_target, routing_heuristic=routing_heuristic
     )
 
 
 def cat_at_origin(H: np.ndarray, d: int, draw_solutions=False, basis="Z", *,
                   analyze_hook_errors=False, _hook_results=None, is_perfect_code=False,
-                  reuse_target: ReuseTarget | str = ReuseTarget.QUBITS) -> stim.Circuit:
+                  reuse_target: ReuseTarget | str = ReuseTarget.QUBITS,
+                  routing_heuristic: str = "critical_path_first") -> stim.Circuit:
     if not has_unique_ones_property(H):
         raise ValueError(f"H is not representing a bipartite graph state.")
 
@@ -135,9 +137,19 @@ def cat_at_origin(H: np.ndarray, d: int, draw_solutions=False, basis="Z", *,
                     k for k, piece in enumerate(x_splits[j]) if pivot_q in piece
                 )
 
+    if routing_heuristic == "joint_resource":
+        seed_heuristic = "critical_path_first"
+        max_trials = 64
+    elif routing_heuristic.startswith("joint_resource_"):
+        seed_heuristic = routing_heuristic[len("joint_resource_"):]
+        max_trials = 64
+    else:
+        seed_heuristic = routing_heuristic
+        max_trials = 0
+
     matched_edges = match_edges(
         H, non_pivots, z_digraphs, x_digraphs, z_candidates, x_candidates,
-        edge_groups=edge_groups
+        edge_groups=edge_groups, routing_heuristic=seed_heuristic
     )
 
     # Build global graphs
@@ -210,6 +222,7 @@ def cat_at_origin(H: np.ndarray, d: int, draw_solutions=False, basis="Z", *,
         z_digraphs=z_digraphs,
         x_digraphs=x_digraphs,
         target=reuse_target,
+        max_trials=max_trials,
     )
     matched_edges = joint_plan.matched_edges
 

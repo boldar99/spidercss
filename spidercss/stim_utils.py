@@ -332,3 +332,14 @@ def get_num_measurements(circ: stim.Circuit) -> int:
 def get_spacetime_volume(circ: stim.Circuit) -> int:
     """Calculates the sum of active ticks for all qubits across the circuit."""
     return get_circuit_depth(circ) * circ.num_qubits
+
+def remove_FAO_data_measurements(circ: stim.Circuit, n: int) -> stim.Circuit:
+    ops = explode_circuit(circ)
+    stim_str = ""
+    for o in ops:
+        targets = [t.value for t in o.targets_copy()]
+        is_meas = o.name == "M"
+        is_data = len(targets) == 1 and targets[0] >= circ.num_qubits - n
+        if not (is_meas and is_data) and o.name != "QUBIT_COORDS":
+            stim_str += str(o) + "\n"
+    return stim.Circuit(stim_str)

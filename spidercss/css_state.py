@@ -71,6 +71,7 @@ def prepare_css_state(
     analyze_hook_errors: bool = True,
     is_perfect_code: bool = False,
     reuse_target: ReuseTarget | str = ReuseTarget.QUBITS,
+    routing_heuristic: str = "critical_path_first",
     preparation_basis: str = "Z",
     strategy: Literal["global", "local"] = "global",
 ) -> stim.Circuit:
@@ -150,6 +151,7 @@ def prepare_css_state(
         analyze_hook_errors=analyze_hook_errors,
         is_perfect_code=is_perfect_code,
         reuse_target=reuse_target,
+        routing_heuristic=routing_heuristic,
     )
 
 
@@ -162,6 +164,7 @@ def prepare_css_state_transversally(
     analyze_hook_errors: bool = True,
     is_perfect_code: bool = False,
     reuse_target: ReuseTarget | str = ReuseTarget.QUBITS,
+    routing_heuristic: str = "critical_path_first",
 ) -> stim.Circuit:
     """Prepare separate code blocks and apply each logical CX transversally."""
     operations, num_logical_qubits = _parse_logical_state(logical_state)
@@ -185,6 +188,7 @@ def prepare_css_state_transversally(
                     analyze_hook_errors=analyze_hook_errors,
                     is_perfect_code=is_perfect_code,
                     reuse_target=reuse_target,
+                    routing_heuristic=routing_heuristic,
                 )
 
             template = templates[basis]

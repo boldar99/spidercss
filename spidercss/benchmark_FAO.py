@@ -20,7 +20,7 @@ from spidercss.stim_utils import make_stim_circ_noisy, get_cnot_depth
 from spidercss.cat_at_origin import cat_at_origin
 from spidercss.resource_scheduling import plan_resource_aware_reuse
 from spidercss.resource_targets import ReuseTarget, normalize_reuse_target
-from spidercss.utils import load_qecc, FAO_hard_QECCS, very_hard_QECCS, get_conj_M, FAO_simp_QECCS
+from spidercss.utils import load_qecc, FAO_hard_QECCS, very_hard_QECCS, get_conj_M, FAO_simp_QECCS, load_FAO_circ
 import json
 
 
@@ -92,33 +92,20 @@ def _simulate_batch(batch_size):
     return batch_size, int(num_flagged), int(num_discarded), int(num_incorrect)
 
 
-def _benchmark_CAO_state_prep_target(
+def benchmark_FAO_state_prep(
     code: str,
-    analyze_hook_errors: bool,
     p: float,
     num_samples_fn,
-    estimate_ler: bool,
-    reuse_target: ReuseTarget,
-    routing_heuristic: str,
-    reuse_decoder: bool,
-    matrix_after_row_ops = None,
-    hook_results = None,
+    estimate_ler: bool
 ):
     global _G_DECODER, _G_CIRC_STR, _G_H_X, _G_L_X, _ESTIMATE_LER
     import random
-    # CP-SAT's random_seed field is a signed 32-bit integer.  Use one stable
-    # code-derived seed across Python, NumPy, and CP-SAT so all circuit-building
-    # stages are governed by the same reproducibility contract.
     seed_val = (
         int(hashlib.sha256(code.encode()).hexdigest()[:8], 16)
         % CP_SAT_SEED_MODULUS
     )
 
-    try:
-        _, H_x, H_z, L_x, L_z, d = load_qecc(code, "FAO")
-    except FileNotFoundError:
-        _, H_x, H_z, L_x, L_z, d = load_qecc(code)
-
+    _, H_x, H_z, L_x, L_z, d = load_qecc(code, "FAO")
     basis = "X" if code in ("15_1_3", "49_1_5", "95_1_7") else "Z"
     if basis == "X":
         print(f"State: |+> (Code {code})")
@@ -133,11 +120,8 @@ def _benchmark_CAO_state_prep_target(
     max_weight = None if bool(d % 2) else (d - 1) // 2
 
     # Build the LUT lazily in the main thread
-    decoder = _G_DECODER if reuse_decoder else None
-
+    decoder = _G_DECODER if estimate_ler else None
     _ESTIMATE_LER = estimate_ler
-    if not reuse_decoder:
-        _G_DECODER = None
     _G_H_X = H_z
     _G_L_X = L_z
 
@@ -145,30 +129,7 @@ def _benchmark_CAO_state_prep_target(
     np.random.seed(seed_val)
     matrix_rng = np.random.RandomState(seed_val)
 
-    if matrix_after_row_ops is None:
-        t = (d - 1) // 2
-        _, matrix_after_row_ops = row_optimize_matrix(
-            H_x,
-            t,
-            max_basis_tries=10_000,
-            rng=matrix_rng,
-        )
-    if hook_results is None and analyze_hook_errors:
-        hook_results = characterize_stabilizer_splits(get_conj_M(matrix_after_row_ops))
-
-    original_circ = cat_at_origin(
-        matrix_after_row_ops, d, basis=basis,
-        analyze_hook_errors=analyze_hook_errors,
-        _hook_results=hook_results, is_perfect_code=is_perfect_code,
-        reuse_target=reuse_target,
-        routing_heuristic=routing_heuristic,
-    )
-
-    reuse_plan = plan_resource_aware_reuse(
-        original_circ, n_data, heuristic="exact", max_time_seconds=15.0,
-        target=reuse_target, random_seed=seed_val,
-    )
-    circ_with_reuse = reuse_plan.circuit
+    circuit = load_FAO_circ(code)
 
     noisy_circ, _ = make_stim_circ_noisy(circ_with_reuse, p, one_cnot_per_layer=True)
 
@@ -338,105 +299,26 @@ def _benchmark_CAO_state_prep_target(
     with open(json_file, "w") as f:
         json.dump(stats, f, indent=4)
 
-    return [stats]
+    return stats
 
-
-def benchmark_CAO_state_prep(
-    code: str,
-    analyze_hook_errors: bool,
-    p=0.001,
-    num_samples_fn=lambda _: 100_000_000,
-    estimate_ler=True,
-    reuse_targets=BENCHMARK_REUSE_TARGETS,
-    reuse_target: ReuseTarget | str | None = None,
-    routing_heuristics=BENCHMARK_ROUTING_HEURISTICS,
-):
-    """Benchmarks every requested reuse target with identical random seeds."""
-    global _G_DECODER
-    # Backwards-compatible singular spelling from the first target API.
-    if reuse_target is not None:
-        reuse_targets = (reuse_target,)
-    if isinstance(reuse_targets, (ReuseTarget, str)):
-        reuse_targets = (reuse_targets,)
-    targets = tuple(normalize_reuse_target(target) for target in reuse_targets)
-    if not targets:
-        raise ValueError("At least one reuse target is required.")
-
-    # The decoder depends on the code, not on the resource target.  Retain it
-    # across the three target runs just as the original multi-strategy
-    # benchmark did.
-    if isinstance(routing_heuristics, str):
-        routing_heuristics = (routing_heuristics,)
-    import hashlib
-    import random
-    import numpy as np
-    from spidercss.utils import load_qecc, get_conj_M
-    seed_val = int(hashlib.sha256(code.encode()).hexdigest()[:8], 16)
-    try:
-        is_self_dual, H_x, H_z, L_x, L_z, d = load_qecc(code, "FAO")
-    except FileNotFoundError:
-        is_self_dual, H_x, H_z, L_x, L_z, d = load_qecc(code)
-    basis = "X" if code in ("15_1_3", "49_1_5", "95_1_7") else "Z"
-    if basis == "X":
-        H_x, H_z = H_z, H_x
-        L_x, L_z = L_z, L_x
-
-    matrix_rng = np.random.RandomState(seed_val)
-    t = (d - 1) // 2
-    print(f"[{code}] Pre-computing row optimizations (10_000 tries)...")
-    _, matrix_after_row_ops = row_optimize_matrix(
-        H_x,
-        t,
-        max_basis_tries=10_000,
-        rng=matrix_rng,
-    )
-    hook_results = None
-    if analyze_hook_errors:
-        print(f"[{code}] Pre-computing hook error characterization...")
-        hook_results = characterize_stabilizer_splits(get_conj_M(matrix_after_row_ops))
-
-    _G_DECODER = None
-    all_stats = []
-    for target in targets:
-        for heuristic in routing_heuristics:
-            print(f"=== Reuse target: {target.value} | Heuristic: {heuristic} ===")
-            all_stats.extend(
-                _benchmark_CAO_state_prep_target(
-                    code=code,
-                    analyze_hook_errors=analyze_hook_errors,
-                    p=p,
-                    num_samples_fn=num_samples_fn,
-                    estimate_ler=estimate_ler,
-                    reuse_target=target,
-                    routing_heuristic=heuristic,
-                    reuse_decoder=True,
-                    matrix_after_row_ops=matrix_after_row_ops,
-                    hook_results=hook_results,
-                )
-            )
-    return all_stats
-
-
-def benchmark(code_iterator, analyze_hook_errors, p, num_samples, estimate_ler=True,
-              reuse_targets=BENCHMARK_REUSE_TARGETS):
+def benchmark(code_iterator, p, num_samples, estimate_ler=True):
     for code in code_iterator:
         print(f"--- Benchmarking {code} ---")
-        benchmark_CAO_state_prep(
-            code, analyze_hook_errors, p, num_samples_fn=num_samples,
-            estimate_ler=estimate_ler, reuse_targets=reuse_targets
+        benchmark_FAO_state_prep(
+            code, p, num_samples_fn=num_samples, estimate_ler=estimate_ler
         )
 
 
 def benchmark_simple_codes():
-    return benchmark(["49_1_5"], True, 0.001, num_samples=lambda d: 100_000_000 if d < 6 else 2_500_000_000, estimate_ler=True)
+    return benchmark(FAO_simp_QECCS(), 0.001, num_samples=lambda d: 100_000_000 if d < 6 else 2_500_000_000, estimate_ler=True)
 
 
 def benchmark_hard_codes():
-    return benchmark(FAO_hard_QECCS(), True, 0.001, num_samples=lambda d: 10_000_000, estimate_ler=False)
+    return benchmark(FAO_hard_QECCS(), 0.001, num_samples=lambda d: 10_000_000, estimate_ler=False)
 
 
 def benchmark_very_hard_codes():
-    return benchmark(very_hard_QECCS(), True, 0.0001, num_samples=lambda d: 1_000_000, estimate_ler=False)
+    return benchmark(very_hard_QECCS(), 0.0001, num_samples=lambda d: 1_000_000, estimate_ler=False)
 
 
 if __name__ == "__main__":

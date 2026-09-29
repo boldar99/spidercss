@@ -46,8 +46,4 @@ def test_small_exact_zx_order_matches_greedy_optimum():
     assert exact.active_volume == greedy.active_volume
 
 
-def test_cat_at_origin_uses_fixed_joint_routing_api():
-    assert "routing_heuristic" not in inspect.signature(cat_at_origin).parameters
-    assert "routing_heuristic" not in inspect.signature(
-        row_optimized_cat_at_origin
-    ).parameters
+

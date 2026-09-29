@@ -12,7 +12,7 @@ def _fake_target_run(**kwargs):
     side_effect=_fake_target_run,
 )
 def test_benchmark_runs_all_reuse_targets_by_default(run_target):
-    stats = benchmark_CAO_state_prep("test_code", True)
+    stats = benchmark_CAO_state_prep("7_1_3", True)
 
     assert [item["reuse_target"] for item in stats] == [
         target.value for target in BENCHMARK_REUSE_TARGETS
@@ -27,7 +27,7 @@ def test_benchmark_runs_all_reuse_targets_by_default(run_target):
 )
 def test_benchmark_can_run_one_explicit_target(run_target):
     stats = benchmark_CAO_state_prep(
-        "test_code", True, reuse_targets="balanced"
+        "7_1_3", True, reuse_targets="balanced"
     )
 
     assert stats == [{"reuse_target": "balanced"}]
@@ -40,7 +40,7 @@ def test_benchmark_can_run_one_explicit_target(run_target):
 )
 def test_singular_reuse_target_alias_remains_supported(run_target):
     stats = benchmark_CAO_state_prep(
-        "test_code", True, reuse_target="depth"
+        "7_1_3", True, reuse_target="depth"
     )
 
     assert stats == [{"reuse_target": "depth"}]

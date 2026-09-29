@@ -21,22 +21,6 @@ heuristics produced inconsistent winners.  A locally good choice in the first
 stage could remove the freedom needed by the second stage, so combinations of
 heuristics behaved almost randomly across codes.
 
-## Experimental result motivating the current direction
-
-The joint-resource path beat Flag at Origin for `49_1_5` in the reported run:
-
-- logical error rate: `3.9168e-05`;
-- acceptance rate: `0.6099`;
-- physical CNOTs: `60`;
-- simultaneous qubits: `87`;
-- flags: `105`;
-- CNOT depth: `114`;
-- expected circuit volume: `16260`.
-
-This was one of the two triorthogonal codes for which the earlier pipeline was
-worse than Flag at Origin.  No final `95_1_7` result had been reported at the
-time of this handoff.
-
 ## Theoretical model
 
 ### 1. Separate precedence from resources

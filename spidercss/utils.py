@@ -310,6 +310,17 @@ def get_project_root() -> Path:
     return Path(__file__).parent
 
 
+def load_FAO_circ(code: str) -> stim.Circuit:
+    from spidercss.stim_utils import remove_FAO_data_measurements
+    n, _, _ = get_n_k_d(code + ".json")
+
+    root = get_project_root()
+    file = root.joinpath("assets", "circuits", "FAO", f"{code}.stim")
+    circ = stim.Circuit.from_file(file)
+    circ.insert(0, stim.CircuitInstruction("R", range(circ.num_qubits)))
+    return remove_FAO_data_measurements(circ, n)
+
+
 def load_qecc(code: str, method: str | None = None):
     data = load_qecc_data(code, method)
 
@@ -332,15 +343,15 @@ def load_qecc_data(code: str, method: str | None = None) -> dict:
     root = get_project_root()
     code_file = f"{code}.json"
     if method is None:
-        for lib in os.listdir(root.joinpath("qeccs")):
-            dir = root.joinpath("qeccs", lib)
+        for lib in os.listdir(root.joinpath("assets", "qeccs")):
+            dir = root.joinpath("assets", "qeccs", lib)
             if dir.is_dir() and code_file in os.listdir(dir) and os:
                 method = lib
                 break
         else:
             raise FileNotFoundError(code)
 
-    file = root.joinpath("qeccs", method, f"{code}.json")
+    file = root.joinpath("assets", "qeccs", method, f"{code}.json")
 
     with open(file, "r") as f:
         return json.load(f)
@@ -361,21 +372,24 @@ def code_sort_key(code: str):
 
 def FAO_QECCS():
     root = get_project_root()
-    fao = root.joinpath("qeccs", "FAO")
+    fao = root.joinpath("assets", "qeccs", "FAO")
     for file_name in sorted(os.listdir(fao), key=code_sort_key):
         yield file_name[:-5]
+
 
 def misc_QECCS():
     root = get_project_root()
-    fao = root.joinpath("qeccs", "misc")
+    fao = root.joinpath("assets", "qeccs", "misc")
     for file_name in sorted(os.listdir(fao), key=code_sort_key):
         yield file_name[:-5]
 
+
 def MQT_QECCS():
     root = get_project_root()
-    fao = root.joinpath("qeccs", "MQT")
+    fao = root.joinpath("assets", "qeccs", "MQT")
     for file_name in sorted(os.listdir(fao), key=code_sort_key):
         yield file_name[:-5]
+
 
 def FAO_simp_QECCS():
     yield from [
@@ -408,14 +422,6 @@ def very_hard_QECCS():
         "92_2_14",
         "79_1_15",
     ]
-
-
-def MQT_QECCS():
-    root = get_project_root()
-    fao = root.joinpath("qeccs", "MQT")
-    for file_name in sorted(os.listdir(fao), key=code_sort_key):
-        yield file_name[:-5]
-
 
 
 def count_operations(circ: stim.Circuit) -> tuple[int, int]:

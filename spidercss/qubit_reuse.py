@@ -208,9 +208,8 @@ class OptimalTightPackingStrategy:
             layer[node] = max((layer[pred] for pred in state.dag.predecessors(node)), default=-1) + 1
 
         active_volume = 0
-        for q in range(state.n_data):
-            if q in state.data_birth and q in state.data_death:
-                b = state.data_birth[q]
+        for q, b in state.data_birth.items():
+            if q in state.data_death:
                 d = state.data_death[q]
                 active_volume += layer[d] - layer[b] + 1
                 
@@ -683,7 +682,7 @@ def dag_to_noisy_circuit(dag: nx.DiGraph, p: float) -> tuple[stim.Circuit, dict[
     return circuit, measurement_map
 
 
-def inject_qubit_reuse(dag: nx.DiGraph, n_data: int, strategy: ReuseStrategy):
+def inject_qubit_reuse(dag: nx.DiGraph, n_data: int, strategy: ReuseStrategy, *, data_last=False):
     """
     Best-Fit routing engine. Groups potential reuse dependencies by target,
     tests all valid sources, and commits the edge with the lowest strategy cost.
@@ -695,10 +694,22 @@ def inject_qubit_reuse(dag: nx.DiGraph, n_data: int, strategy: ReuseStrategy):
     birth_node, death_node = {}, {}
     data_birth, data_death = {}, {}
 
+    n_total = 0
+    for node in mod_dag.nodes():
+        targets = mod_dag.nodes[node].get("targets", ())
+        if targets:
+            n_total = max(n_total, max(targets) + 1)
+
+    def is_data(q):
+        if data_last:
+            return q >= n_total - n_data
+        else:
+            return q < n_data
+
     for node in topo_order:
         targets = mod_dag.nodes[node].get("targets", ())
         for q in targets:
-            if q >= n_data:
+            if not is_data(q):
                 ancillas.add(q)
                 if q not in birth_node: birth_node[q] = node
                 death_node[q] = node
@@ -813,7 +824,7 @@ def inject_qubit_reuse(dag: nx.DiGraph, n_data: int, strategy: ReuseStrategy):
     return state.dag, logical_to_physical, next_hw
 
 
-def apply_logical_qubit_merge_and_compress(dag: nx.DiGraph, n_data: int) -> nx.DiGraph:
+def apply_logical_qubit_merge_and_compress(dag: nx.DiGraph, n_data: int, *, data_last=False) -> nx.DiGraph:
     """
     1. Merges logical qubits based on M -> R injected edges.
     2. Compresses the remaining active qubit IDs so they are contiguous.
@@ -848,22 +859,44 @@ def apply_logical_qubit_merge_and_compress(dag: nx.DiGraph, n_data: int) -> nx.D
 
     # --- PHASE 2: Collect and Compress ---
     active_roots = set()
+    n_total = 0
     for node in mod_dag.nodes():
         targets = mod_dag.nodes[node].get("targets", [])
+        if targets:
+            n_total = max(n_total, max(targets) + 1)
         for q in targets:
             active_roots.add(get_root(q))
 
-    data_roots = [q for q in active_roots if q < n_data]
-    ancilla_roots = sorted([q for q in active_roots if q >= n_data])
+    def is_data(q):
+        if data_last:
+            return q >= n_total - n_data
+        else:
+            return q < n_data
+
+    data_roots = sorted([q for q in active_roots if is_data(q)])
+    ancilla_roots = sorted([q for q in active_roots if not is_data(q)])
 
     compression_map = {}
-    for q in data_roots:
-        compression_map[q] = q
-
-    next_dense_id = n_data
-    for q in ancilla_roots:
-        compression_map[q] = next_dense_id
-        next_dense_id += 1
+    
+    # If data_last is True, we might want to map ancillas to 0..k, and data to k..k+n_data.
+    # Wait, the compression map should probably just pack them densely. 
+    # If data is last, it should still be last.
+    
+    next_dense_id = 0
+    if not data_last:
+        for q in data_roots:
+            compression_map[q] = next_dense_id
+            next_dense_id += 1
+        for q in ancilla_roots:
+            compression_map[q] = next_dense_id
+            next_dense_id += 1
+    else:
+        for q in ancilla_roots:
+            compression_map[q] = next_dense_id
+            next_dense_id += 1
+        for q in data_roots:
+            compression_map[q] = next_dense_id
+            next_dense_id += 1
 
     # --- PHASE 3: Rewrite the DAG ---
     for node in mod_dag.nodes():
