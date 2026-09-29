@@ -165,7 +165,7 @@ def _benchmark_CAO_state_prep_target(
     )
 
     reuse_plan = plan_resource_aware_reuse(
-        original_circ, n_data, heuristic="exact", max_time_seconds=15.0,
+        original_circ, n_data, heuristic="decross_greedy", max_time_seconds=15.0,
         target=reuse_target, random_seed=seed_val,
     )
     circ_with_reuse = reuse_plan.circuit

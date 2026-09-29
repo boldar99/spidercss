@@ -271,13 +271,102 @@ def greedy_resource_order(dag: nx.DiGraph, lifetimes: list[LogicalLifetime]) -> 
     return order
 
 
-def exact_resource_order(
+def decross_greedy_resource_order(dag: nx.DiGraph, lifetimes: list[LogicalLifetime]) -> list[int]:
+    """Implements the local greedy heuristic from DeCross et al. (arXiv:2210.08039).
+
+    This strategy orders the measurement of logical qubits by greedily selecting
+    the next qubit whose causal cone introduces the fewest *new* input qubits
+    (state preparations/resets) that have not already been scheduled.
+    """
+    cone = {}
+    inputs_in_cone = {}
+    birth_to_qubit = {lt.birth_node: lt.logical_qubit for lt in lifetimes}
+    
+    for lt in lifetimes:
+        if lt.death_node is not None:
+            c = nx.ancestors(dag, lt.death_node)
+            c.add(lt.death_node)
+        else:
+            c = set()
+            for node, data in dag.nodes(data=True):
+                if lt.logical_qubit in data.get("targets", []):
+                    c.add(node)
+                    c.update(nx.ancestors(dag, node))
+        
+        cone[lt.logical_qubit] = c
+        inputs_in_cone[lt.logical_qubit] = {n for n in c if n in birth_to_qubit}
+        
+    ordered_lifetimes = []
+    remaining_lifetimes = set(lt.logical_qubit for lt in lifetimes)
+    scheduled_inputs = set()
+    
+    while remaining_lifetimes:
+        best_q = None
+        best_new_inputs = float('inf')
+        
+        for q in sorted(remaining_lifetimes):
+            new_inputs = len(inputs_in_cone[q] - scheduled_inputs)
+            if new_inputs < best_new_inputs:
+                best_new_inputs = new_inputs
+                best_q = q
+                
+        ordered_lifetimes.append(best_q)
+        scheduled_inputs.update(inputs_in_cone[best_q])
+        remaining_lifetimes.remove(best_q)
+        
+    order = []
+    scheduled_nodes = set()
+    in_degree = {node: dag.in_degree(node) for node in dag.nodes}
+    ready_nodes = {node for node, deg in in_degree.items() if deg == 0}
+    
+    for q in ordered_lifetimes:
+        c = cone[q]
+        unscheduled_in_c = c - scheduled_nodes
+        while unscheduled_in_c:
+            available = ready_nodes & unscheduled_in_c
+            if not available:
+                raise ValueError("Cycle or missing dependency in causal cone scheduling.")
+            
+            node = min(available)
+            ready_nodes.remove(node)
+            unscheduled_in_c.remove(node)
+            scheduled_nodes.add(node)
+            order.append(node)
+            
+            for successor in dag.successors(node):
+                in_degree[successor] -= 1
+                if in_degree[successor] == 0:
+                    ready_nodes.add(successor)
+                    
+    while ready_nodes:
+        node = min(ready_nodes)
+        ready_nodes.remove(node)
+        scheduled_nodes.add(node)
+        order.append(node)
+        for successor in dag.successors(node):
+            in_degree[successor] -= 1
+            if in_degree[successor] == 0:
+                ready_nodes.add(successor)
+                
+    return order
+
+
+def decross_exact_resource_order(
     dag: nx.DiGraph,
     lifetimes: list[LogicalLifetime],
     max_time_seconds: float = 15.0,
     random_seed: int = 0,
 ) -> tuple[list[int], str, float | None]:
-    """Minimizes peak live qubits, then live-qubit area, using CP-SAT.
+    """Minimizes peak live qubits using the CP-SAT exact solver from DeCross et al.
+
+    Reference: 
+    Matthew DeCross et al., "Qubit-reuse compilation with mid-circuit measurement 
+    and reset", https://arxiv.org/abs/2210.08039.
+
+    This formulation takes the transitive closure of the DAG on the subgraph of 
+    measurements and resets, and injects artificial dependencies (reuse edges) 
+    between them to define a valid qubit reuse. Maximizing these edges minimizes 
+    the peak qubits required.
 
     ``max_time_seconds`` is retained as the public budget parameter, but is
     applied as CP-SAT's deterministic-time limit.  A wall-clock cutoff can
@@ -298,53 +387,108 @@ def exact_resource_order(
     if count < 2:
         return nodes, "OPTIMAL", 0.0
 
+    # Build the dependencies between measurements and resets
+    m_nodes = [lt.death_node for lt in lifetimes if lt.death_node is not None]
+    r_nodes = [lt.birth_node for lt in lifetimes]
+    
+    nodes_of_interest = set(m_nodes + r_nodes)
+    
+    # Compute reachable nodes from each node of interest
+    tc_edges = set()
+    for u in nodes_of_interest:
+        for v in nx.descendants(dag, u):
+            if v in nodes_of_interest:
+                tc_edges.add((u, v))
+
     model = cp_model.CpModel()
-    position = {node: model.NewIntVar(0, count - 1, f"position_{node}") for node in nodes}
-    model.AddAllDifferent(position.values())
-    for before, after in dag.edges:
-        model.Add(position[before] < position[after])
+    
+    # We assign an integer position variable to each node of interest to prevent cycles
+    max_pos = len(nodes_of_interest) - 1
+    pos = {v: model.NewIntVar(0, max_pos, f"pos_{v}") for v in nodes_of_interest}
+    
+    # Enforce original DAG paths
+    for u, v in tc_edges:
+        model.Add(pos[u] < pos[v])
 
-    intervals = []
-    sizes = []
-    for lifetime in lifetimes:
-        start = position[lifetime.birth_node]
-        end = model.NewIntVar(1, count, f"end_q{lifetime.logical_qubit}")
-        if lifetime.death_node is None:
-            model.Add(end == count)
+    reuse_vars = {}
+    for m in m_nodes:
+        for r in r_nodes:
+            # Cannot reuse if there is already a path from reset to measurement 
+            # (would create cycle) or if they are the same node
+            if m == r or (r, m) in tc_edges:
+                continue
+            
+            e = model.NewBoolVar(f"reuse_{m}_{r}")
+            reuse_vars[(m, r)] = e
+            # Injecting an artificial dependency from a measurement to a reset
+            model.Add(pos[m] < pos[r]).OnlyEnforceIf(e)
+
+    # At most one incoming reuse per reset and one outgoing per measurement
+    for m in m_nodes:
+        m_out = [reuse_vars[(m, r)] for r in r_nodes if (m, r) in reuse_vars]
+        if m_out:
+            model.AddAtMostOne(m_out)
+
+    for r in r_nodes:
+        r_in = [reuse_vars[(m, r)] for m in m_nodes if (m, r) in reuse_vars]
+        if r_in:
+            model.AddAtMostOne(r_in)
+
+    # We want to maximize the number of reuses
+    total_reuses = sum(reuse_vars.values())
+    if reuse_vars:
+        model.Maximize(total_reuses)
+
+    # Inject greedy heuristic as a hint to dramatically speed up the solver
+    hint_order = decross_greedy_resource_order(dag, lifetimes)
+    node_to_pos = {node: i for i, node in enumerate(hint_order)}
+    for v in nodes_of_interest:
+        model.AddHint(pos[v], node_to_pos[v])
+        
+    B = nx.Graph()
+    m_set = [f"m_{m}" for m in m_nodes]
+    r_set = [f"r_{r}" for r in r_nodes]
+    B.add_nodes_from(m_set, bipartite=0)
+    B.add_nodes_from(r_set, bipartite=1)
+    for m in m_nodes:
+        for r in r_nodes:
+            if m != r and (r, m) not in tc_edges:
+                if node_to_pos[m] < node_to_pos[r]:
+                    B.add_edge(f"m_{m}", f"r_{r}")
+                    
+    matching = nx.bipartite.maximum_matching(B, top_nodes=m_set)
+    for (m, r), e in reuse_vars.items():
+        if matching.get(f"m_{m}") == f"r_{r}":
+            model.AddHint(e, 1)
         else:
-            model.Add(end == position[lifetime.death_node] + 1)
-        size = model.NewIntVar(1, count, f"size_q{lifetime.logical_qubit}")
-        model.Add(size == end - start)
-        intervals.append(
-            model.NewIntervalVar(start, size, end, f"lifetime_q{lifetime.logical_qubit}")
-        )
-        sizes.append(size)
-
-    capacity = model.NewIntVar(1, max(1, len(lifetimes)), "peak_live_qubits")
-    if intervals:
-        model.AddCumulative(intervals, [1] * len(intervals), capacity)
-
-    # The multiplier makes peak width the strict primary objective.  The
-    # maximum possible sum of interval sizes is len(lifetimes) * count.
-    area_limit = max(1, len(lifetimes) * count)
-    model.Minimize(capacity * (area_limit + 1) + sum(sizes))
-
-    hint = greedy_resource_order(dag, lifetimes)
-    for index, node in enumerate(hint):
-        model.AddHint(position[node], index)
+            model.AddHint(e, 0)
 
     solver = cp_model.CpSolver()
     solver.parameters.max_deterministic_time = max_time_seconds
     solver.parameters.num_search_workers = 1
     solver.parameters.random_seed = int(random_seed) % (2**31 - 1)
     solver.parameters.randomize_search = False
+    
     status_code = solver.Solve(model)
     status = solver.StatusName(status_code)
+    
     if status_code not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
-        return hint, status, None
+        return hint_order, status, None
 
-    order = sorted(nodes, key=lambda node: solver.Value(position[node]))
-    return order, status, solver.BestObjectiveBound()
+    # Construct augmented DAG
+    augmented_dag = dag.copy()
+    for (m, r), e in reuse_vars.items():
+        if solver.Value(e):
+            augmented_dag.add_edge(m, r)
+            
+    # Produce the final schedule
+    if not nx.is_directed_acyclic_graph(augmented_dag):
+        return hint_order, "ERROR_CYCLIC", None
+        
+    order = list(nx.topological_sort(augmented_dag))
+    
+    best_bound = len(lifetimes) - solver.BestObjectiveBound()
+    return order, status, float(best_bound)
 
 
 def exact_resource_order_dp(
@@ -388,19 +532,19 @@ def exact_resource_order_dp(
     choice: dict[int, int] = {}
 
     @lru_cache(maxsize=None)
-    def solve(mask: int) -> tuple[int, int]:
+    def solve(mask: int) -> int:
         if mask == full_mask:
-            return 0, 0
+            return 0
         active = active_after(mask)
-        best = (count + 1, count * max(1, len(lifetimes)) + 1)
+        best = count + 1
         best_index = -1
         for index in range(count):
             bit = 1 << index
             if mask & bit or predecessor_masks[index] & ~mask:
                 continue
             during = active + births_at[index]
-            child_peak, child_area = solve(mask | bit)
-            candidate = (max(during, child_peak), during + child_area)
+            child_peak = solve(mask | bit)
+            candidate = max(during, child_peak)
             if candidate < best:
                 best = candidate
                 best_index = index
@@ -737,8 +881,12 @@ def plan_resource_aware_reuse(
         order = greedy_resource_order(problem.dag, problem.lifetimes)
         solver_status = "HEURISTIC"
         objective_bound = None
-    elif heuristic == "exact":
-        order, solver_status, objective_bound = exact_resource_order(
+    elif heuristic == "decross_greedy":
+        order = decross_greedy_resource_order(problem.dag, problem.lifetimes)
+        solver_status = "HEURISTIC_DECROSS_GREEDY"
+        objective_bound = None
+    elif heuristic in ("exact", "decross_exact"):
+        order, solver_status, objective_bound = decross_exact_resource_order(
             problem.dag,
             problem.lifetimes,
             max_time_seconds=max_time_seconds,

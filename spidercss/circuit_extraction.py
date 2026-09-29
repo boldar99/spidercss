@@ -47,9 +47,6 @@ class CircuitBuilder(ABC):
     def get_circuit(self): pass
 
     @abstractmethod
-    def permute_qubits(self, qubit_to_qubit_mapping: dict[int, int]): pass
-
-    @abstractmethod
     def tick(self): pass
 
 
@@ -122,18 +119,6 @@ class StimBuilder(CircuitBuilder):
 
     def get_circuit(self):
         return self.circ
-
-    def permute_qubits(self, qubit_to_qubit_mapping: dict[int, int]) -> stim.Circuit:
-        new_circ = stim.Circuit()
-        for op in self.circ:
-            new_targets = []
-            for t in op.targets_copy():
-                if t.is_qubit_target:
-                    new_targets.append(qubit_to_qubit_mapping.get(t.value, t.value))
-                else:
-                    new_targets.append(t)
-            new_circ.append(op.name, new_targets, op.gate_args_copy())
-        self.circ = new_circ
 
     def tick(self):
         self.circ.append("TICK", [])
