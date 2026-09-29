@@ -276,11 +276,9 @@ def _benchmark_CAO_state_prep_target(
 
     stats = {
         "code": code,
-        "strategy": "JointResourceScheduler",
         "reuse_target": reuse_target.value,
         "circuit_seed": seed_val,
         # Retained so existing result tables remain readable.
-        "routing_heuristic": "joint_resource",
         "analyze_hook_errors": None if hook_results == {} else analyze_hook_errors,
         "p": p,
         "num_samples": total_shots,
@@ -313,7 +311,7 @@ def _benchmark_CAO_state_prep_target(
         "noisy_circuit": circ_str,
     }
 
-    print(f"--- Results for {reuse_target.value} + {stats['strategy']} ---")
+    print(f"--- Results for {reuse_target.value} ---")
     if stats['logical_error_rate'] is not None:
         print(f"Logical Error Rate = {stats['logical_error_rate']:.4e}", end=";\t ")
     if stats['acceptance_rate'] is not None:
@@ -326,7 +324,7 @@ def _benchmark_CAO_state_prep_target(
     print()
 
     target_suffix = "" if reuse_target is ReuseTarget.QUBITS else f"_{reuse_target.value}"
-    json_file = f"simulation_results/{code}_joint_resource{target_suffix}_JointResourceScheduler_{circ_hash}.json"
+    json_file = f"simulation_results/{code}_{reuse_target.value}_{circ_hash}.json"
     with open(json_file, "w") as f:
         json.dump(stats, f, indent=4)
 
@@ -385,7 +383,7 @@ def benchmark(code_iterator, analyze_hook_errors, p, num_samples, estimate_ler=T
 
 
 def benchmark_simple_codes():
-    return benchmark(FAO_simp_QECCS(), True, 0.001, num_samples=lambda d: 100_000_000 if d < 6 else 500_000_000, estimate_ler=True)
+    return benchmark(["23_1_7"], False, 0.001, num_samples=lambda d: 100_000_000 if d < 6 else 500_000_000, estimate_ler=True)
 
 
 def benchmark_hard_codes():
@@ -398,5 +396,5 @@ def benchmark_very_hard_codes():
 
 if __name__ == "__main__":
     benchmark_simple_codes()
-    benchmark_hard_codes()
-    benchmark_very_hard_codes()
+    # benchmark_hard_codes()
+    # benchmark_very_hard_codes()

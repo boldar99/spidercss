@@ -67,9 +67,9 @@ def main():
             try:
                 stats = json.load(file)
                 code_raw = stats.get("code")
-                strat = stats.get("strategy")
-                if not code_raw or not strat:
-                    continue
+                strat = stats.get("reuse_target")
+                # if not code_raw or not strat:
+                #     continue
                 grouped_stats.setdefault((code_raw, strat), []).append(stats)
             except Exception:
                 continue
@@ -88,7 +88,7 @@ def main():
             continue
                 
     # Sort by d then n
-    data.sort(key=lambda x: (x["d"], x["n"], x.get("code", ""), len(x.get("strategy", ""))))
+    data.sort(key=lambda x: (x["d"], x["n"], x.get("code", ""), len(x.get("reuse_target", ""))))
     
     grouped_data = []
     for code, group in itertools.groupby(data, key=lambda x: x.get("code", "")):
@@ -99,7 +99,7 @@ def main():
     print("\\scriptsize")
     print("\\begin{tabular*}{\\textwidth}{@{\\extracolsep{\\fill}}l l c c c c c c c c}")
     print("\\toprule")
-    print("\\makecell[l]{QEC Code \\\\ \\& State} & Method & \\makecell{CNOT \\\\ Count} & \\makecell{Flag \\\\ Count} & \\makecell{Qubit Reuse \\\\ Opt.\\@ Target} & \\makecell{CNOT \\\\ scheduler} & \\makecell{Sim.\\@ \\\\ Qubits} & Depth & LER & AR \\\\")
+    print("\\makecell[l]{QEC Code \\\\ \\& State} & Method & \\makecell{CNOT \\\\ Count} & \\makecell{Flag \\\\ Count} & \\makecell{Qubit Reuse \\\\ Opt.\\@ Target} & \\makecell{Sim.\\@ \\\\ Qubits} & Depth & LER & AR \\\\")
     print("\\midrule")
     
     for code_raw, group in grouped_data:
@@ -209,8 +209,8 @@ def main():
         
         if has_baseline:
             # Print the Flag at Origin row
-            print(f"{multirow_code} & FaO & {base_cx_str} & {base_flags_str} &   &   & {base_sim_str} & {base_depth_str} & {base_ler} & {base_ar} \\\\")
-            print("\\cmidrule{2-10}")
+            print(f"{multirow_code} & FaO & {base_cx_str} & {base_flags_str} &   &  {base_sim_str} & {base_depth_str} & {base_ler} & {base_ar} \\\\")
+            print("\\cmidrule{2-9}")
         
         cxs_str = wrap_bold(str(cxs)) if is_best(cxs, best_cx) else str(cxs)
         flags_str = wrap_bold(str(flags)) if is_best(flags, best_flags) else str(flags)
@@ -249,7 +249,7 @@ def main():
                 ar_temp = row.get("acceptance_rate", 1.0)
                 n_ler = n_samples * ar_temp
                 low, high = wilson_score_interval(ler, n_ler)
-                
+
                 # Determine shared exponent if we didn't calculate one globally
                 exp_to_use = shared_exp if shared_exp != 0 else math.floor(math.log10(ler))
                 
@@ -277,17 +277,8 @@ def main():
             flag_col = multirow_flags if i == 0 else ""
             
             code_col = multirow_code if (i == 0 and not has_baseline) else ""
-            cnot_scheduler = row.get("routing_heuristic", "")
-            cnot_scheduler_dict = {
-                "earliest_start_first": "Early Start",
-                "active_spider_first": "Active Spider",
-                "critical_path_first": r"Crit.\@ Path",
-                "sa_sequence_distance": r"Seq.\@ Dist.",
-                "joint_resource": "Joint",
-            }
-            cnot_scheduler_str = cnot_scheduler_dict.get(cnot_scheduler)
 
-            print(f"{code_col} & {method_col} & {cx_col} & {flag_col} & {strategy} & {cnot_scheduler_str} & {sim_qubits_str} & {depth_str} & {ler_latex} & {ar_latex} \\\\")
+            print(f"{code_col} & {method_col} & {cx_col} & {flag_col} & {strategy} & {sim_qubits_str} & {depth_str} & {ler_latex} & {ar_latex} \\\\")
             
         # Optional line between different codes for clean grouping
         print("\\midrule")

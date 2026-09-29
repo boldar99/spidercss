@@ -1,0 +1,44 @@
+{
+    "code": "9_1_3",
+    "reuse_target": "depth",
+    "circuit_seed": 2109221757,
+    "analyze_hook_errors": null,
+    "p": 0.001,
+    "num_samples": 100000000,
+    "total_flagged": 862746,
+    "total_discarded": 0,
+    "total_incorrect": 979,
+    "logical_error_rate": 9.875197874655678e-06,
+    "acceptance_rate": 0.99137254,
+    "raw_acceptance_rate": 0.99137254,
+    "num_cx": 12,
+    "num_flags": 2,
+    "num_qubits_original": 11,
+    "num_sim_qubits": 11,
+    "depth": 4,
+    "active_qubit_volume": 142,
+    "resource_solver_status": "FEASIBLE",
+    "reuse_allocation_status": "GREEDY_REUSE_FRONTIER",
+    "reuse_tradeoff_frontier": [
+        {
+            "num_sim_qubits": 9,
+            "depth": 9,
+            "num_reuse_merges": 2
+        },
+        {
+            "num_sim_qubits": 10,
+            "depth": 5,
+            "num_reuse_merges": 1
+        },
+        {
+            "num_sim_qubits": 11,
+            "depth": 4,
+            "num_reuse_merges": 0
+        }
+    ],
+    "circuit_volume": 44,
+    "expected_circuit_volume": 44,
+    "circuit_hash": "48c8752fd2f1b83c",
+    "perfect_stim": "R 9\nRX 2\nCX 2 9\nR 4\nCX 9 4\nR 1\nCX 2 1\nR 5\nCX 9 5 2 9\nM 9\nRX 3\nR 10\nCX 3 10 3 4\nR 7\nCX 10 7\nR 6\nCX 10 6 3 10\nM 10\nRX 0\nCX 0 1\nRX 8\nCX 8 7\nDETECTOR rec[-2]\nDETECTOR rec[-1]",
+    "noisy_circuit": "R 9\nDEPOLARIZE1(0.001) 9\nRX 2\nDEPOLARIZE1(0.001) 2\nRX 3\nDEPOLARIZE1(0.001) 3\nR 10\nDEPOLARIZE1(0.001) 10\nDEPOLARIZE1(1e-05) 0 1 4 5 6 7 8\nTICK\nCX 2 9\nDEPOLARIZE2(0.001) 2 9\nCX 3 10\nDEPOLARIZE2(0.001) 3 10\nR 4\nDEPOLARIZE1(0.001) 4\nR 1\nDEPOLARIZE1(0.001) 1\nR 7\nDEPOLARIZE1(0.001) 7\nDEPOLARIZE1(1e-05) 0 5 6 8\nTICK\nCX 9 4\nDEPOLARIZE2(0.001) 9 4\nCX 2 1\nDEPOLARIZE2(0.001) 2 1\nCX 10 7\nDEPOLARIZE2(0.001) 10 7\nR 5\nDEPOLARIZE1(0.001) 5\nR 6\nDEPOLARIZE1(0.001) 6\nRX 0\nDEPOLARIZE1(0.001) 0\nRX 8\nDEPOLARIZE1(0.001) 8\nDEPOLARIZE1(1e-05) 3\nTICK\nCX 9 5\nDEPOLARIZE2(0.001) 9 5\nCX 3 4\nDEPOLARIZE2(0.001) 3 4\nCX 10 6\nDEPOLARIZE2(0.001) 10 6\nCX 0 1\nDEPOLARIZE2(0.001) 0 1\nCX 8 7\nDEPOLARIZE2(0.001) 8 7\nDEPOLARIZE1(1e-05) 2\nTICK\nCX 2 9\nDEPOLARIZE2(0.001) 2 9\nCX 3 10\nDEPOLARIZE2(0.001) 3 10\nDEPOLARIZE1(1e-05) 0 1 4 5 6 7 8\nTICK\nX_ERROR(0.001) 9\nM 9\nDEPOLARIZE1(0.001) 9\nX_ERROR(0.001) 10\nM 10\nDEPOLARIZE1(0.001) 10\nTICK\nM 0 1 2 3 4 5 6 7 8\nDETECTOR rec[-7] rec[-4]\nDETECTOR rec[-5] rec[-4] rec[-2] rec[-1]\nDETECTOR rec[-9] rec[-8] rec[-6] rec[-5]\nDETECTOR rec[-6] rec[-3]\nOBSERVABLE_INCLUDE(0) rec[-7] rec[-5] rec[-3]"
+}
