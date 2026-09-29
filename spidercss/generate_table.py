@@ -2,28 +2,10 @@ import glob
 import json
 import os
 import itertools
-
-from spidercss.utils import load_qecc, load_qecc_data
-
 import math
 
-BASELINE_DATA = {
-    "7_1_3": {"cx": 15, "flags": 3, "sim_qubits": "8", "depth": "10", "ler_bounds": (2.7, 2.9, -5), "ar_bounds": (0.9783, 0.9784)},
-    "9_1_3": {"cx": 26, "flags": 9, "sim_qubits": "12", "depth": "9", "ler_bounds": (2.4, 2.6, -5), "ar_bounds": (0.9715, 0.9716)},
-    "17_1_5": {"cx": 74, "flags": 21, "sim_qubits": "23", "depth": "25", "ler_bounds": (7.7, 18.2, -7), "ar_bounds": (0.8945, 0.8948)},
-    "25_1_5": {"cx": 92, "flags": 28, "sim_qubits": "32", "depth": "23", "ler_bounds": (6.7, 24.2, -7), "ar_bounds": (0.8980, 0.8984)},
-    "49_1_5": {"cx": 361, "flags": 105, "sim_qubits": "95", "depth": "59", "ler_bounds": (4.2, 4.7, -5), "ar_bounds": (0.5840, 0.5850)},
-    "20_2_6": {"cx": 145, "flags": 47, "sim_qubits": "36", "depth": "54", "ler_bounds": (2.3, 9.7, -8), "ar_bounds": (0.8234, 0.8235)},
-    "23_1_7": {"cx": 237, "flags": 80, "sim_qubits": "44", "depth": "33", "ler_bounds": (1.8, 3.1, -7), "ar_bounds": (0.7095, 0.7099)},
-    "31_1_7": {"cx": 211, "flags": 69, "sim_qubits": "55", "depth": "58", "ler_bounds": (2.1, 5.4, -7), "ar_bounds": (0.7500, 0.7510)},
-    "49_1_7": {"cx": 262, "flags": 85, "sim_qubits": "64", "depth": "46", "ler_bounds": (1.2, 4.4, -7), "ar_bounds": (0.7020, 0.7030)},
-    "95_1_7": {"cx": 1175, "flags": 380, "sim_qubits": "258", "depth": "389", "ler_bounds": (4.4, 6.3, -5), "ar_bounds": (0.2400, 0.2410)},
-    "49_1_9": {"cx": 408, "flags": 136, "sim_qubits": "93", "depth": "123", "ler_bounds": (1.1, 5.8, -7), "ar_bounds": (0.5310, 0.5320)},
-    "81_1_9": {"cx": 614, "flags": 206, "sim_qubits": "141", "depth": "129", "ler_bounds": (2.0, 11.0, -7), "ar_bounds": (0.3550, 0.3560)},
-    "47_1_11": {"cx": 1033, "flags": 388, "sim_qubits": "186", "depth": "292", "ler_bounds": (3.6, 17.0, -7), "ar_bounds": (0.1220, 0.1230)},
-    "71_1_11": {"cx": 829, "flags": 268, "sim_qubits": "177", "depth": "282", "ler_bounds": (4.4, 29.0, -8), "ar_bounds": (0.2140, 0.2150)},
-}
-
+from spidercss.utils import load_qecc, load_qecc_data
+from spidercss.results_parser import BASELINE_DATA, wilson_score_interval, circuit_score, get_grouped_stats
 def get_state(code, k):
     if code in ("49_1_5", "95_1_7"):
         return r"$\ket{\overline{+}}$"
@@ -38,41 +20,23 @@ def format_float(val, digits=1):
 def escape_percentage(p):
     return f"{p * 100 + 1e-9:.1f}\\%"
 
-def wilson_score_interval(p, n, z=1.95996):
-    if n <= 0:
-        return p, p
-    denominator = 1 + z**2/n
-    center = p + z**2 / (2*n)
-    spread = z * math.sqrt(p*(1-p)/n + z**2 / (4*n**2))
-    return (center - spread) / denominator, (center + spread) / denominator
-
-def circuit_score(stats):
-    ler = stats.get("logical_error_rate")
-    qubits = stats.get("num_sim_qubits", float('inf'))
-    depth = stats.get("depth", float('inf'))
-    if ler is not None and ler > 0:
-        # Saving 1 qubit roughly offsets a 5% worse LER
-        # Saving 1 depth roughly offsets a 0.5% worse LER
-        return math.log(ler) + 0.05 * qubits + 0.005 * depth
-    else:
-        return qubits + 0.005 * depth
-
 def main():
-    results_dir = "simulation_results"
-    json_files = glob.glob(os.path.join(results_dir, "*.json"))
+    results_dir = "spidercss/simulation_results"
     
-    grouped_stats = {}
-    for f in json_files:
-        with open(f, 'r') as file:
-            try:
-                stats = json.load(file)
-                code_raw = stats.get("code")
-                strat = stats.get("strategy")
-                if not code_raw or not strat:
-                    continue
-                grouped_stats.setdefault((code_raw, strat), []).append(stats)
-            except Exception:
-                continue
+    grouped_stats = get_grouped_stats(results_dir)
+                
+    data = []
+    for (code_raw, strat), group in grouped_stats.items():
+        best_stats = min(group, key=circuit_score)
+        try:
+            code_data = load_qecc_data(code_raw, "FAO" if code_raw in BASELINE_DATA else None)
+            best_stats["n"] = code_data["n"]
+            best_stats["k"] = code_data["k"]
+            best_stats["d"] = code_data["d"]
+            best_stats["label"] = code_data.get("abbr_name", "")
+            data.append(best_stats)
+        except Exception:
+            continue
                 
     data = []
     for (code_raw, strat), group in grouped_stats.items():
@@ -215,7 +179,7 @@ def main():
         cxs_str = wrap_bold(str(cxs)) if is_best(cxs, best_cx) else str(cxs)
         flags_str = wrap_bold(str(flags)) if is_best(flags, best_flags) else str(flags)
 
-        multirow_method = f"\\multirow{{{num_strategy_rows}}}{{*}}{{CSSCat}}"
+        multirow_method = f"\\multirow{{{num_strategy_rows}}}{{*}}{{SpiderCSS}}"
         multirow_cx = f"\\multirow{{{num_strategy_rows}}}{{*}}{{{cxs_str}}}"
         multirow_flags = f"\\multirow{{{num_strategy_rows}}}{{*}}{{{flags_str}}}"
         
@@ -288,7 +252,7 @@ def main():
     print("\\end{tabular*}")
     print("\\caption{")
     print("\tResource overhead, logical error rate, and acceptance rate for different CSS QECCs.")
-    print("\tColumns from left to right: QEC code and state, Method (CSSCat or FaO, i.e.\\@ Flag at Origin~\\cite{forlivesi2025flag}), number of CNOT gates in the circuit, number of flag measurements, optimization target of qubit reuse strategy, maximum simultaneous number of qubits necessary, circuit depth, and finally logical error rate and acceptance rates using Wilson confidence intervals of 95\\%.")
+    print("\tColumns from left to right: QEC code and state, Method (SpiderCSS or FaO, i.e.\\@ Flag at Origin~\\cite{forlivesi2025flag}), number of CNOT gates in the circuit, number of flag measurements, optimization target of qubit reuse strategy, maximum simultaneous number of qubits necessary, circuit depth, and finally logical error rate and acceptance rates using Wilson confidence intervals of 95\\%.")
     print("\tThe logical error rates of some codes were not estimated (marked $-$) as the lookup table was too large to store in memory.")
     print("\tFor largest 4 codes, values marked with $^*$ indicate simulations performed with a physical error rate of $p=0.0001$ instead of the usual $p=0.001$.")
     print("}")
@@ -357,7 +321,7 @@ def export_to_excel(data, grouped_data, filename="simulation_results.xlsx"):
 
                     continue
                 if h == "Method":
-                    out_row[h] = "CSSCat"
+                    out_row[h] = "SpiderCSS"
                 else:
                     out_row[h] = row.get(h, None)
             rows.append(out_row)

@@ -18,7 +18,7 @@ import galois
 
 from spidercss.stim_utils import make_stim_circ_noisy
 from spidercss.cat_at_origin import row_optimized_cat_at_origin, cat_at_origin
-from spidercss.utils import load_qecc, FAO_simp_QECCS, FAO_hard_QECCS, very_hard_QECCS, get_conj_M
+from spidercss.utils import load_qecc, FAO_simp_QECCS, FAO_hard_QECCS, very_hard_QECCS, get_conj_M, _layer_cnot_circuit
 from spidercss.qubit_reuse import (
     build_circuit_dag,
     inject_qubit_reuse,
@@ -329,6 +329,6 @@ def benchmark_very_hard_codes():
 
 
 if __name__ == "__main__":
-    # benchmark_simple_codes()
-    benchmark_hard_codes()
-    benchmark_very_hard_codes()
+    benchmark_simple_codes()
+    # benchmark_hard_codes()
+    # benchmark_very_hard_codes()
