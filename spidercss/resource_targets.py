@@ -11,6 +11,7 @@ class ReuseTarget(str, Enum):
     QUBITS = "qubits"
     DEPTH = "depth"
     BALANCED = "balanced"
+    NONE = "None"
 
 
 def normalize_reuse_target(target: ReuseTarget | str) -> ReuseTarget:
@@ -36,7 +37,7 @@ def resource_target_score(
     target = normalize_reuse_target(target)
     if target is ReuseTarget.QUBITS:
         return qubits, depth, active_volume
-    if target is ReuseTarget.DEPTH:
+    if target in (ReuseTarget.DEPTH, ReuseTarget.NONE):
         return depth, qubits, active_volume
     return qubits * depth, qubits, depth, active_volume
 

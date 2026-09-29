@@ -1,56 +1,37 @@
 import os
+import multiprocessing as mp
+os.environ["KMP_WARNINGS"] = "0"
+mp.set_start_method("fork", force=True)
+
+import json
+import hashlib
+import random
+import numpy as np
+import stim
+import pandas as pd
+from tqdm import tqdm
+import galois
+from concurrent.futures import ProcessPoolExecutor, as_completed
 
 from spidercss.hook_errors import characterize_stabilizer_splits
 from spidercss.optimize_parity_matrix import row_optimize_matrix
-
-os.environ["KMP_WARNINGS"] = "0"
-import multiprocessing as mp
-
-mp.set_start_method("fork", force=True)
-import hashlib
-import pandas as pd
-from concurrent.futures import ProcessPoolExecutor, as_completed
-from tqdm import tqdm
-
-import numpy as np
-import stim
-import galois
-
-from spidercss.stim_utils import make_stim_circ_noisy, get_cnot_depth
 from spidercss.cat_at_origin import cat_at_origin
 from spidercss.resource_scheduling import plan_resource_aware_reuse
-from spidercss.resource_targets import ReuseTarget, normalize_reuse_target
-from spidercss.utils import load_qecc, FAO_hard_QECCS, very_hard_QECCS, get_conj_M, FAO_simp_QECCS
-import json
-
-
+from spidercss.resource_targets import ReuseTarget
+from spidercss.utils import load_qecc, get_conj_M, load_FAO_circ, FAO_simp_QECCS, FAO_hard_QECCS, very_hard_QECCS
+from spidercss.stim_utils import make_stim_circ_noisy, get_cnot_depth
+from spidercss.qubit_reuse import build_circuit_dag, dag_to_circuit
 from spidercss.lut_decoder import LutDecoder
 
-# Globals to inherit via OS fork (Zero-Copy)
-_ESTIMATE_LER: bool = True
-_G_CIRC_STR: str = None
-_G_DECODER: LutDecoder = None
-_G_H_X: np.ndarray = None
-_G_L_X: np.ndarray = None
-
-BENCHMARK_REUSE_TARGETS = (
-    ReuseTarget.QUBITS,
-    # ReuseTarget.DEPTH,
-)
-BENCHMARK_ROUTING_HEURISTICS = (
-    "joint_resource",
-    "critical_path_first",
-    "earliest_start_first",
-    "active_spider_first",
-    "sa_sequence_distance",
-    "joint_resource_earliest_start_first",
-)
 CP_SAT_SEED_MODULUS = 2**31 - 1
 
+_ESTIMATE_LER = True
+_G_CIRC_STR = None
+_G_DECODER = None
+_G_H_X = None
+_G_L_X = None
 
 def _simulate_batch(batch_size):
-    # Compiling per-batch mathematically guarantees independent PRNG streams
-    # and takes negligible time (~11 microseconds)
     sampler = stim.Circuit(_G_CIRC_STR).compile_sampler()
     samples = sampler.sample(batch_size)
 
@@ -58,14 +39,12 @@ def _simulate_batch(batch_size):
     g_H_x_T = _GF(_G_H_X.T)
     g_L_x_T = _GF(_G_L_X.T)
 
-    # Flagged shots (any 1 in the flag measurements)
     is_flagged = np.any(samples[:, :-_G_H_X.shape[1]], axis=1)
     num_flagged = np.sum(is_flagged)
 
     filtered_samples = samples[~is_flagged]
     raw_measurements = filtered_samples[:, -_G_H_X.shape[1]:]
 
-    # Fast GF(2) matrix multiplication for syndromes
     g_raw = _GF(raw_measurements.astype(np.int8))
     syndromes = g_raw @ g_H_x_T
 
@@ -78,112 +57,34 @@ def _simulate_batch(batch_size):
     num_discarded = len(syndromes) - len(valid_corrections)
 
     valid_measurements = raw_measurements[valid_mask]
-    # Fast bitwise XOR using NumPy
     corrected_measurements = valid_measurements ^ valid_corrections
 
-    # Fast GF(2) matrix multiplication for logicals
     g_corrected = _GF(corrected_measurements.astype(np.int8))
     predicted_logicals = g_corrected @ g_L_x_T
 
-    # Incorrect if any logical observable is flipped
     incorrect_predictions = np.any(predicted_logicals, axis=1)
     num_incorrect = np.sum(incorrect_predictions)
 
     return batch_size, int(num_flagged), int(num_discarded), int(num_incorrect)
 
-
-def _benchmark_CAO_state_prep_target(
-    code: str,
-    analyze_hook_errors: bool,
-    p: float,
-    num_samples_fn,
-    estimate_ler: bool,
-    reuse_target: ReuseTarget,
-    routing_heuristic: str,
-    reuse_decoder: bool,
-    matrix_after_row_ops = None,
-    hook_results = None,
-):
+def run_simulation(code, method_name, circ_with_reuse, scheduled_circ, H_x, H_z, L_z, max_weight, p, num_samples, estimate_ler, num_qubits_max, depth_max, num_qubits_min, depth_min):
     global _G_DECODER, _G_CIRC_STR, _G_H_X, _G_L_X, _ESTIMATE_LER
-    import random
-    # CP-SAT's random_seed field is a signed 32-bit integer.  Use one stable
-    # code-derived seed across Python, NumPy, and CP-SAT so all circuit-building
-    # stages are governed by the same reproducibility contract.
-    seed_val = (
-        int(hashlib.sha256(code.encode()).hexdigest()[:8], 16)
-        % CP_SAT_SEED_MODULUS
-    )
 
-    try:
-        _, H_x, H_z, L_x, L_z, d = load_qecc(code, "FAO")
-    except FileNotFoundError:
-        _, H_x, H_z, L_x, L_z, d = load_qecc(code)
-
-    basis = "X" if code in ("15_1_3", "49_1_5", "95_1_7") else "Z"
-    if basis == "X":
-        print(f"State: |+> (Code {code})")
-        H_x, H_z = H_z, H_x
-        L_x, L_z = L_z, L_x
-    else:
-        print(f"State: |0> (Code {code})")
-    is_perfect_code = code in ("7_1_3", "23_1_7")
-
-    num_samples = num_samples_fn(d)
     n_data = H_x.shape[1]
-    max_weight = None if bool(d % 2) else (d - 1) // 2
+    noisy_circ, _ = make_stim_circ_noisy(scheduled_circ, p, one_cnot_per_layer=True)
+    
+    basis = "X" if code in ("15_1_3", "49_1_5", "95_1_7") else "Z"
+    noisy_circ.append("M" + basis, range(n_data))
 
-    # Build the LUT lazily in the main thread
-    decoder = _G_DECODER if reuse_decoder else None
-
-    _ESTIMATE_LER = estimate_ler
-    if not reuse_decoder:
-        _G_DECODER = None
-    _G_H_X = H_z
-    _G_L_X = L_z
-
-    random.seed(seed_val)
-    np.random.seed(seed_val)
-    matrix_rng = np.random.RandomState(seed_val)
-
-    if matrix_after_row_ops is None:
-        t = (d - 1) // 2
-        _, matrix_after_row_ops = row_optimize_matrix(
-            H_x,
-            t,
-            max_basis_tries=10_000,
-            rng=matrix_rng,
-        )
-    if hook_results is None and analyze_hook_errors:
-        hook_results = characterize_stabilizer_splits(get_conj_M(matrix_after_row_ops))
-
-    original_circ = cat_at_origin(
-        matrix_after_row_ops, d, basis=basis,
-        analyze_hook_errors=analyze_hook_errors,
-        _hook_results=hook_results, is_perfect_code=is_perfect_code,
-        reuse_target=reuse_target,
-        routing_heuristic=routing_heuristic,
-    )
-
-    reuse_plan = plan_resource_aware_reuse(
-        original_circ, n_data, heuristic="decross_greedy", max_time_seconds=15.0,
-        target=reuse_target, random_seed=seed_val,
-    )
-    circ_with_reuse = reuse_plan.circuit
-
-    noisy_circ, _ = make_stim_circ_noisy(circ_with_reuse, p, one_cnot_per_layer=True)
-
-    noisy_circ.append("M" + basis, range(H_x.shape[1]))
-
-    for i, H in enumerate(H_z):
+    for idx, H in enumerate(H_z):
         qubit_indices = np.where(H == 1)[0]
-        record_targets = [stim.target_rec(i - H_x.shape[1]) for i in qubit_indices]
+        record_targets = [stim.target_rec(q - n_data) for q in qubit_indices]
         noisy_circ.append("DETECTOR", record_targets)
-    for i, L in enumerate(L_z):
+    for idx, L in enumerate(L_z):
         qubit_indices = np.where(L == 1)[0]
-        record_targets = [stim.target_rec(i - H_x.shape[1]) for i in qubit_indices]
-        noisy_circ.append("OBSERVABLE_INCLUDE", record_targets, i)
+        record_targets = [stim.target_rec(q - n_data) for q in qubit_indices]
+        noisy_circ.append("OBSERVABLE_INCLUDE", record_targets, idx)
 
-    # Compute circuit properties
     num_cx = 0
     for operation in circ_with_reuse.flattened():
         if operation.name not in {"CX", "CNOT"}:
@@ -193,17 +94,14 @@ def _benchmark_CAO_state_prep_target(
             all(target.is_qubit_target for target in targets[index:index + 2])
             for index in range(0, len(targets), 2)
         )
-    num_flags = original_circ.num_detectors
-    num_qubits = original_circ.num_qubits
-    depth = get_cnot_depth(circ_with_reuse)
-    num_sim_qubits = reuse_plan.peak_qubits
+    num_flags = circ_with_reuse.num_detectors
+    num_qubits_original = circ_with_reuse.num_qubits
 
-    # Compute circuit hash and setup CSV caching
     circ_str = str(noisy_circ)
     circ_hash = hashlib.sha256(circ_str.encode()).hexdigest()[:16]
 
     os.makedirs("simulation_results", exist_ok=True)
-    csv_file = f"simulation_results/{code}_{circ_hash}.csv"
+    csv_file = f"simulation_results/{code}_{method_name}_{circ_hash}.csv"
 
     total_shots = 0
     total_flagged = 0
@@ -221,12 +119,14 @@ def _benchmark_CAO_state_prep_target(
     remaining_samples = max(0, num_samples - total_shots)
 
     _G_CIRC_STR = circ_str
+    _ESTIMATE_LER = estimate_ler
+    _G_H_X = H_z
+    _G_L_X = L_z
+    
+    if _G_DECODER is None and estimate_ler:
+        _G_DECODER = LutDecoder(H_z, max_decodable_weight=max_weight, verbose=True)
 
     if remaining_samples > 0:
-        if estimate_ler and decoder is None:
-            decoder = LutDecoder(H_z, max_decodable_weight=max_weight, verbose=True)
-            _G_DECODER = decoder
-
         batch_size = 1_000_000
         num_full_batches = remaining_samples // batch_size
         remainder = remaining_samples % batch_size
@@ -234,19 +134,13 @@ def _benchmark_CAO_state_prep_target(
         if remainder > 0:
             batches.append(remainder)
 
-        print(f"Running {remaining_samples} additional samples (Total existing: {total_shots})...")
+        print(f"[{code} - {method_name}] Running {remaining_samples} additional samples (Total existing: {total_shots})...")
 
         num_cores = max(1, mp.cpu_count() - 2)
         with ProcessPoolExecutor(max_workers=num_cores) as executor:
-            futures = [
-                executor.submit(_simulate_batch, b_size)
-                for b_size in batches
-            ]
+            futures = [executor.submit(_simulate_batch, b_size) for b_size in batches]
 
-            with tqdm(
-                total=remaining_samples,
-                desc=f"Simulating {code} [{reuse_target.value}]",
-            ) as pbar:
+            with tqdm(total=remaining_samples, desc=f"Simulating {code} [{method_name}]") as pbar:
                 for future in as_completed(futures):
                     b_size, n_flagged, n_discarded, n_incorrect = future.result()
                     total_shots += b_size
@@ -254,7 +148,6 @@ def _benchmark_CAO_state_prep_target(
                     total_discarded += n_discarded
                     total_incorrect = (total_incorrect + n_incorrect) if estimate_ler else None
 
-                    # Update CSV incrementally
                     df_new = pd.DataFrame([{
                         "total_shots": b_size,
                         "num_flagged": n_flagged,
@@ -269,14 +162,11 @@ def _benchmark_CAO_state_prep_target(
 
                     pbar.update(b_size)
     else:
-        print(f"Using {total_shots} cached samples from {csv_file}")
+        print(f"[{code} - {method_name}] Using {total_shots} cached samples from {csv_file}")
 
-    # Compute final metrics
     AR = 1.0 - (total_flagged / total_shots) if total_shots > 0 else 0.0
     total_valid_corrections = total_shots - total_flagged - total_discarded
     total_AR = total_valid_corrections / total_shots if total_shots > 0 else None
-
-    print(f"Discarded {total_discarded} uncorrectable shots.")
 
     if estimate_ler:
         LER = total_incorrect / total_valid_corrections if total_valid_corrections > 0 else 0.0
@@ -285,158 +175,144 @@ def _benchmark_CAO_state_prep_target(
 
     stats = {
         "code": code,
-        "reuse_target": reuse_target.value,
-        "routing_heuristic": routing_heuristic,
-        "circuit_seed": seed_val,
-        # Retained so existing result tables remain readable.
-        "analyze_hook_errors": None if hook_results == {} else analyze_hook_errors,
+        "method": method_name,
         "p": p,
         "num_samples": total_shots,
         "total_flagged": total_flagged,
         "total_discarded": total_discarded,
         "total_incorrect": total_incorrect,
         "logical_error_rate": LER,
-        "acceptance_rate": total_AR ,
+        "acceptance_rate": total_AR,
         "raw_acceptance_rate": AR,
         "num_cx": num_cx,
         "num_flags": num_flags,
-        "num_qubits_original": num_qubits,
-        "num_sim_qubits": num_sim_qubits,
-        "depth": depth,
-        "active_qubit_volume": reuse_plan.active_volume,
-        "resource_solver_status": reuse_plan.solver_status,
-        "reuse_allocation_status": reuse_plan.allocation_status,
-        "reuse_tradeoff_frontier": [
-            {
-                "num_sim_qubits": point.num_qubits,
-                "depth": point.cnot_depth,
-                "num_reuse_merges": point.num_reuse_merges,
-            }
-            for point in reuse_plan.tradeoff_frontier
-        ],
-        "circuit_volume": int(depth * num_sim_qubits),
-        "expected_circuit_volume": int(depth * num_sim_qubits / total_AR) if total_AR is not None and total_AR > 0 else 0,
+        "num_qubits_original": num_qubits_original,
+        "num_qubits_max": num_qubits_max,
+        "depth_max": depth_max,
+        "num_qubits_min": num_qubits_min,
+        "depth_min": depth_min,
         "circuit_hash": circ_hash,
         "perfect_stim": str(circ_with_reuse),
         "noisy_circuit": circ_str,
     }
 
-    print(f"--- Results for {reuse_target.value} ---")
+    print(f"--- Results for {method_name} ---")
     if stats['logical_error_rate'] is not None:
         print(f"Logical Error Rate = {stats['logical_error_rate']:.4e}", end=";\t ")
     if stats['acceptance_rate'] is not None:
         print(f"Acceptance Rate = {stats['acceptance_rate']:.4f}", end=";\t ")
     print(f"CXs = {stats['num_cx']}", end=";\t ")
-    print(f"Sim. Qubits = {stats['num_sim_qubits']}", end=";\t ")
-    print(f"Flags = {stats['num_flags']}", end=";\t ")
-    print(f"Depth = {stats['depth']}", end=";\t ")
-    print(f"Expected Circuit Volume = {stats['expected_circuit_volume']}")
+    print(f"Max Reuse Qubits = {stats['num_qubits_max']}", end=";\t ")
+    print(f"Max Reuse Depth = {stats['depth_max']}", end=";\t ")
+    print(f"Min Reuse Qubits = {stats['num_qubits_min']}", end=";\t ")
+    print(f"Min Reuse Depth = {stats['depth_min']}")
     print()
 
-    target_suffix = "" if reuse_target is ReuseTarget.QUBITS else f"_{reuse_target.value}"
-    json_file = f"simulation_results/{code}_{routing_heuristic}_{reuse_target.value}_{circ_hash}.json"
+    json_file = f"simulation_results/{code}_{method_name}_{circ_hash}.json"
     with open(json_file, "w") as f:
         json.dump(stats, f, indent=4)
 
-    return [stats]
+    return stats
 
 
-def benchmark_CAO_state_prep(
-    code: str,
-    analyze_hook_errors: bool,
-    p=0.001,
-    num_samples_fn=lambda _: 100_000_000,
-    estimate_ler=True,
-    reuse_targets=BENCHMARK_REUSE_TARGETS,
-    reuse_target: ReuseTarget | str | None = None,
-    routing_heuristics=BENCHMARK_ROUTING_HEURISTICS,
-):
-    """Benchmarks every requested reuse target with identical random seeds."""
+def benchmark_state_prep(code: str, p: float, num_samples_fn, estimate_ler: bool):
     global _G_DECODER
-    # Backwards-compatible singular spelling from the first target API.
-    if reuse_target is not None:
-        reuse_targets = (reuse_target,)
-    if isinstance(reuse_targets, (ReuseTarget, str)):
-        reuse_targets = (reuse_targets,)
-    targets = tuple(normalize_reuse_target(target) for target in reuse_targets)
-    if not targets:
-        raise ValueError("At least one reuse target is required.")
+    seed_val = (int(hashlib.sha256(code.encode()).hexdigest()[:8], 16) % CP_SAT_SEED_MODULUS)
+    random.seed(seed_val)
+    np.random.seed(seed_val)
 
-    # The decoder depends on the code, not on the resource target.  Retain it
-    # across the three target runs just as the original multi-strategy
-    # benchmark did.
-    if isinstance(routing_heuristics, str):
-        routing_heuristics = (routing_heuristics,)
-    import hashlib
-    import random
-    import numpy as np
-    from spidercss.utils import load_qecc, get_conj_M
-    seed_val = int(hashlib.sha256(code.encode()).hexdigest()[:8], 16)
     try:
-        is_self_dual, H_x, H_z, L_x, L_z, d = load_qecc(code, "FAO")
+        _, H_x, H_z, L_x, L_z, d = load_qecc(code, "FAO")
     except FileNotFoundError:
-        is_self_dual, H_x, H_z, L_x, L_z, d = load_qecc(code)
+        _, H_x, H_z, L_x, L_z, d = load_qecc(code)
+
     basis = "X" if code in ("15_1_3", "49_1_5", "95_1_7") else "Z"
     if basis == "X":
         H_x, H_z = H_z, H_x
         L_x, L_z = L_z, L_x
 
-    matrix_rng = np.random.RandomState(seed_val)
-    t = (d - 1) // 2
-    print(f"[{code}] Pre-computing row optimizations (10_000 tries)...")
-    _, matrix_after_row_ops = row_optimize_matrix(
-        H_x,
-        t,
-        max_basis_tries=10_000,
-        rng=matrix_rng,
-    )
-    hook_results = None
-    if analyze_hook_errors:
-        print(f"[{code}] Pre-computing hook error characterization...")
-        hook_results = characterize_stabilizer_splits(get_conj_M(matrix_after_row_ops))
+    is_perfect_code = code in ("7_1_3", "23_1_7")
+    n_data = H_x.shape[1]
+    max_weight = None if bool(d % 2) else (d - 1) // 2
+    num_samples = num_samples_fn(d)
 
     _G_DECODER = None
+
+    # Pre-computation for CAO
+    matrix_rng = np.random.RandomState(seed_val)
+    t = (d - 1) // 2
+    print(f"[{code}] Pre-computing CAO row optimizations...")
+    _, matrix_after_row_ops = row_optimize_matrix(H_x, t, max_basis_tries=10_000, rng=matrix_rng)
+    print(f"[{code}] Pre-computing CAO hook error characterization...")
+    hook_results = characterize_stabilizer_splits(get_conj_M(matrix_after_row_ops))
+
     all_stats = []
-    for target in targets:
-        for heuristic in routing_heuristics:
-            print(f"=== Reuse target: {target.value} | Heuristic: {heuristic} ===")
-            all_stats.extend(
-                _benchmark_CAO_state_prep_target(
-                    code=code,
-                    analyze_hook_errors=analyze_hook_errors,
-                    p=p,
-                    num_samples_fn=num_samples_fn,
-                    estimate_ler=estimate_ler,
-                    reuse_target=target,
-                    routing_heuristic=heuristic,
-                    reuse_decoder=True,
-                    matrix_after_row_ops=matrix_after_row_ops,
-                    hook_results=hook_results,
-                )
-            )
+
+    # ==========================
+    # CAO Processing
+    # ==========================
+    print(f"[{code}] Generating CAO circuits...")
+    
+    # 1. Max Reuse
+    cao_max = cat_at_origin(matrix_after_row_ops, d, basis=basis, analyze_hook_errors=True, _hook_results=hook_results, is_perfect_code=is_perfect_code, reuse_target=ReuseTarget.QUBITS)
+    num_qubits_max_cao = cao_max.num_qubits
+    depth_max_cao = get_cnot_depth(cao_max)
+
+    # 2. Min Reuse (Depth Preserving)
+    cao_min = cat_at_origin(matrix_after_row_ops, d, basis=basis, analyze_hook_errors=True, _hook_results=hook_results, is_perfect_code=is_perfect_code, reuse_target=ReuseTarget.DEPTH)
+    num_qubits_min_cao = cao_min.num_qubits
+    depth_min_cao = get_cnot_depth(cao_min)
+
+    # 3. No Reuse (Exact Scheduled)
+    cao_none = cat_at_origin(matrix_after_row_ops, d, basis=basis, analyze_hook_errors=True, _hook_results=hook_results, is_perfect_code=is_perfect_code, reuse_target=ReuseTarget.NONE)
+    cao_dag = build_circuit_dag(cao_none)
+    cao_scheduled, _ = dag_to_circuit(cao_dag, heuristic="exact")
+
+    stats_cao = run_simulation(code, "CSSCat", cao_none, cao_scheduled, H_x, H_z, L_z, max_weight, p, num_samples, estimate_ler, num_qubits_max_cao, depth_max_cao, num_qubits_min_cao, depth_min_cao)
+    all_stats.append(stats_cao)
+
+    # ==========================
+    # FAO Processing
+    # ==========================
+    print(f"[{code}] Generating FAO circuits...")
+    fao_circ = load_FAO_circ(code)
+
+    # 1. Max Reuse
+    fao_max = plan_resource_aware_reuse(fao_circ, n_data, heuristic="decross_greedy", target=ReuseTarget.QUBITS)
+    num_qubits_max_fao = fao_max.circuit.num_qubits
+    depth_max_fao = get_cnot_depth(fao_max.circuit)
+
+    # 2. Min Reuse
+    fao_min = plan_resource_aware_reuse(fao_circ, n_data, heuristic="naive", target=ReuseTarget.QUBITS)
+    num_qubits_min_fao = fao_min.circuit.num_qubits
+    depth_min_fao = get_cnot_depth(fao_min.circuit)
+
+    # 3. No Reuse (Exact Scheduled)
+    fao_dag = build_circuit_dag(fao_circ)
+    fao_scheduled, _ = dag_to_circuit(fao_dag, heuristic="exact")
+
+    stats_fao = run_simulation(code, "FaO", fao_circ, fao_scheduled, H_x, H_z, L_z, max_weight, p, num_samples, estimate_ler, num_qubits_max_fao, depth_max_fao, num_qubits_min_fao, depth_min_fao)
+    all_stats.append(stats_fao)
+
     return all_stats
 
 
-def benchmark(code_iterator, analyze_hook_errors, p, num_samples, estimate_ler=True,
-              reuse_targets=BENCHMARK_REUSE_TARGETS):
+def benchmark(code_iterator, p, num_samples, estimate_ler=True):
     for code in code_iterator:
         print(f"--- Benchmarking {code} ---")
-        benchmark_CAO_state_prep(
-            code, analyze_hook_errors, p, num_samples_fn=num_samples,
-            estimate_ler=estimate_ler, reuse_targets=reuse_targets
-        )
+        benchmark_state_prep(code, p, num_samples_fn=num_samples, estimate_ler=estimate_ler)
 
 
 def benchmark_simple_codes():
-    return benchmark(["49_1_5"], True, 0.001, num_samples=lambda d: 100_000_000 if d < 6 else 2_500_000_000, estimate_ler=True)
+    return benchmark(["49_1_5"], 0.001, num_samples=lambda d: 100_000_000 if d < 6 else 2_500_000_000, estimate_ler=True)
 
 
 def benchmark_hard_codes():
-    return benchmark(FAO_hard_QECCS(), True, 0.001, num_samples=lambda d: 10_000_000, estimate_ler=False)
+    return benchmark(FAO_hard_QECCS(), 0.001, num_samples=lambda d: 10_000_000, estimate_ler=False)
 
 
 def benchmark_very_hard_codes():
-    return benchmark(very_hard_QECCS(), True, 0.0001, num_samples=lambda d: 1_000_000, estimate_ler=False)
+    return benchmark(very_hard_QECCS(), 0.0001, num_samples=lambda d: 1_000_000, estimate_ler=False)
 
 
 if __name__ == "__main__":

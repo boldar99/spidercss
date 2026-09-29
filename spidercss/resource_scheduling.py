@@ -881,6 +881,10 @@ def plan_resource_aware_reuse(
         order = greedy_resource_order(problem.dag, problem.lifetimes)
         solver_status = "HEURISTIC"
         objective_bound = None
+    elif heuristic == "naive":
+        order = list(range(problem.dag.number_of_nodes()))
+        solver_status = "HEURISTIC_NAIVE"
+        objective_bound = None
     elif heuristic == "decross_greedy":
         order = decross_greedy_resource_order(problem.dag, problem.lifetimes)
         solver_status = "HEURISTIC_DECROSS_GREEDY"
@@ -904,7 +908,25 @@ def plan_resource_aware_reuse(
             f"Interval coloring used {minimum_qubits} qubits but cut width is {minimum_peak}."
         )
 
-    if target is ReuseTarget.QUBITS:
+    if target is ReuseTarget.NONE:
+        logical_to_physical = {}
+        next_ancilla = n_data
+        for q in range(len(problem.lifetimes)):
+            if q < n_data:
+                logical_to_physical[q] = q
+            else:
+                logical_to_physical[q] = next_ancilla
+                next_ancilla += 1
+        cnot_depth = _cnot_depth_for_mapping(problem, order, logical_to_physical)
+        selected = _AllocationCandidate(
+            len(problem.lifetimes),
+            cnot_depth,
+            num_reuse_merges=0,
+        )
+        candidates = [selected]
+        selected_mapping = logical_to_physical
+        allocation_status = "NO_REUSE"
+    elif target is ReuseTarget.QUBITS:
         selected_mapping = minimum_mapping
         cnot_depth = _cnot_depth_for_mapping(problem, order, selected_mapping)
         selected = _AllocationCandidate(

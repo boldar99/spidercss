@@ -494,33 +494,119 @@ def _hybrid_topological_optimization(dag: nx.DiGraph, greedy_passes: int = 15, g
     return best_global_L
 
 
+def _compute_D_weights_cnot(dag: nx.DiGraph) -> dict[int, int]:
+    L = list(nx.topological_sort(dag))
+    
+    first_cnot_for_q = {}
+    last_cnot_for_q = {}
+    
+    for node in L:
+        data = dag.nodes[node]
+        targets = data.get("targets", [])
+        if isinstance(targets, int): 
+            targets = [targets]
+        elif isinstance(targets, tuple): 
+            targets = list(targets)
+            
+        op_name = data.get("op_name", "")
+        # Only consider 2-qubit gates as CNOTs for this weight calculation
+        # In Stim, two-qubit gates have 2 targets (or multiple of 2, but build_circuit_dag splits them)
+        is_cnot = len(targets) == 2 and op_name not in {"M", "MX", "MR", "MZ", "R", "RX"}
+        
+        if is_cnot:
+            for q in targets:
+                if q not in first_cnot_for_q: 
+                    first_cnot_for_q[q] = node
+                last_cnot_for_q[q] = node
+                
+    D = {node: 0 for node in L}
+    for node in first_cnot_for_q.values(): 
+        D[node] -= 1
+    for node in last_cnot_for_q.values(): 
+        D[node] += 1
+        
+    return D
+
 def _exact_topological_optimization(dag: nx.DiGraph, max_time_seconds: float = 15.0) -> list:
-    """
-    Finds the mathematically optimal topological ordering that minimizes 
-    active qubit lifetimes using Constraint Programming (OR-Tools CP-SAT).
-    """
     try:
         from ortools.sat.python import cp_model
     except ImportError:
-        raise ImportError("ortools is required for exact optimization. Run `pip install ortools`.")
+        raise ImportError("ortools is required for exact optimization.")
         
     L = list(nx.topological_sort(dag))
     if len(L) < 2:
         return L
         
-    D = _compute_D_weights(dag)
-        
     model = cp_model.CpModel()
     N = len(L)
     
     pos = {n: model.NewIntVar(0, N - 1, f"pos_{n}") for n in L}
-    
     model.AddAllDifferent(pos.values())
     
     for u, v in dag.edges():
         model.Add(pos[u] < pos[v])
         
-    objective_expr = sum(pos[n] * D[n] for n in L if D[n] != 0)
+    # Identify CNOTs
+    cnot_nodes = []
+    for n in L:
+        targets = dag.nodes[n].get("targets", [])
+        op_name = dag.nodes[n].get("op_name", "")
+        if len(targets) == 2 and op_name not in {"M", "MX", "MR", "MZ", "R", "RX"}:
+            cnot_nodes.append(n)
+            
+    cnot_pos = {}
+    if cnot_nodes:
+        N_cnot = len(cnot_nodes)
+        cnot_pos = {n: model.NewIntVar(0, N_cnot - 1, f"cnot_pos_{n}") for n in cnot_nodes}
+        model.AddAllDifferent(cnot_pos.values())
+        
+        # O(N_cnot^2) constraints to link pos and cnot_pos
+        for u in cnot_nodes:
+            for v in cnot_nodes:
+                if u != v:
+                    b = model.NewBoolVar(f"b_{u}_{v}")
+                    model.Add(pos[u] < pos[v]).OnlyEnforceIf(b)
+                    model.Add(pos[u] > pos[v]).OnlyEnforceIf(b.Not())
+                    model.Add(cnot_pos[u] < cnot_pos[v]).OnlyEnforceIf(b)
+                    model.Add(cnot_pos[u] > cnot_pos[v]).OnlyEnforceIf(b.Not())
+
+    # Compute weights for primary (CNOT) and secondary (Absolute) objectives
+    first_cnot_for_q = {}
+    last_cnot_for_q = {}
+    first_node_for_q = {}
+    last_meas_for_q = {}
+    
+    for node in L:
+        data = dag.nodes[node]
+        targets = data.get("targets", [])
+        if isinstance(targets, int): targets = [targets]
+        elif isinstance(targets, tuple): targets = list(targets)
+        op_name = data.get("op_name", "")
+        is_meas = op_name in {"M", "MX", "MR", "MZ"}
+        
+        for q in targets:
+            if q not in first_node_for_q:
+                first_node_for_q[q] = node
+            if is_meas:
+                last_meas_for_q[q] = node
+            if node in cnot_nodes:
+                if q not in first_cnot_for_q:
+                    first_cnot_for_q[q] = node
+                last_cnot_for_q[q] = node
+
+    D_cnot = {n: 0 for n in cnot_nodes}
+    for n in first_cnot_for_q.values(): D_cnot[n] -= 1
+    for n in last_cnot_for_q.values(): D_cnot[n] += 1
+    
+    D_abs = {n: 0 for n in L}
+    for n in first_node_for_q.values(): D_abs[n] -= 1
+    for n in last_meas_for_q.values(): D_abs[n] += 1
+    
+    primary_obj = sum(cnot_pos[n] * D_cnot[n] for n in cnot_nodes if D_cnot[n] != 0) if cnot_nodes else 0
+    secondary_obj = sum(pos[n] * D_abs[n] for n in L if D_abs[n] != 0)
+    
+    # Weight primary objective heavily so it dominates
+    objective_expr = primary_obj * (N * 2) + secondary_obj
     model.Minimize(objective_expr)
     
     solver = cp_model.CpSolver()
@@ -530,14 +616,11 @@ def _exact_topological_optimization(dag: nx.DiGraph, max_time_seconds: float = 1
     hint_L = _hybrid_topological_optimization(dag)
     for i, n in enumerate(hint_L):
         model.AddHint(pos[n], i)
-    
+        
     status = solver.Solve(model)
-    
     if status in (cp_model.OPTIMAL, cp_model.FEASIBLE):
         return sorted(L, key=lambda n: solver.Value(pos[n]))
-        
-    return hint_L
-
+    return _hybrid_topological_optimization(dag)
 
 def dag_to_circuit(dag: nx.DiGraph, heuristic: str | None = "exact") -> tuple[stim.Circuit, dict[int, int]]:
     """
@@ -561,6 +644,8 @@ def dag_to_circuit(dag: nx.DiGraph, heuristic: str | None = "exact") -> tuple[st
         sorted_nodes = _hybrid_topological_optimization(dag)
     elif heuristic == "exact":
         sorted_nodes = _exact_topological_optimization(dag)
+    elif heuristic == "exact_cnot":
+        sorted_nodes = _exact_cnot_topological_optimization(dag)
     else:
         raise ValueError(f"Unknown heuristic: {heuristic}")
 
