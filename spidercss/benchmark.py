@@ -34,7 +34,7 @@ _G_H_X: np.ndarray = None
 _G_L_X: np.ndarray = None
 
 BENCHMARK_REUSE_TARGETS = (
-    ReuseTarget.QUBITS,
+    # ReuseTarget.QUBITS,
     ReuseTarget.DEPTH,
 )
 CP_SAT_SEED_MODULUS = 2**31 - 1
@@ -383,7 +383,7 @@ def benchmark(code_iterator, analyze_hook_errors, p, num_samples, estimate_ler=T
 
 
 def benchmark_simple_codes():
-    return benchmark(["23_1_7"], False, 0.001, num_samples=lambda d: 100_000_000 if d < 6 else 500_000_000, estimate_ler=True)
+    return benchmark(["47_1_11"], False, 0.001, num_samples=lambda d: 100_000_000 if d < 6 else 2_500_000_000, estimate_ler=True)
 
 
 def benchmark_hard_codes():
@@ -395,6 +395,6 @@ def benchmark_very_hard_codes():
 
 
 if __name__ == "__main__":
-    benchmark_simple_codes()
+    # benchmark_simple_codes()
     # benchmark_hard_codes()
-    # benchmark_very_hard_codes()
+    benchmark_very_hard_codes()

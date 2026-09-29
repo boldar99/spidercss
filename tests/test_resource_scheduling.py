@@ -1,8 +1,10 @@
 import networkx as nx
 import stim
+from unittest.mock import patch
 
 from spidercss.resource_scheduling import (
     build_resource_event_dag,
+    emit_scheduled_circuit,
     plan_resource_aware_reuse,
 )
 from spidercss.resource_targets import ReuseTarget
@@ -132,3 +134,28 @@ def test_reuse_targets_expose_width_depth_tradeoff():
         (3, 2),
         (4, 1),
     }
+
+
+def test_depth_frontier_emits_only_the_selected_stim_circuit():
+    circuit = stim.Circuit(
+        """
+        R 0 1
+        R 2
+        CX 0 2
+        M 2
+        R 3
+        CX 1 3
+        M 3
+        """
+    )
+
+    with patch(
+        "spidercss.resource_scheduling.emit_scheduled_circuit",
+        wraps=emit_scheduled_circuit,
+    ) as emit:
+        plan = plan_resource_aware_reuse(
+            circuit, n_data=2, heuristic="greedy", target="depth"
+        )
+
+    assert emit.call_count == 1
+    assert plan.cnot_depth == get_cnot_depth(plan.circuit)

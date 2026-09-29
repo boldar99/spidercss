@@ -1,6 +1,6 @@
 from unittest.mock import patch
 
-from spidercss.benchmark import benchmark_CAO_state_prep
+from spidercss.benchmark import BENCHMARK_REUSE_TARGETS, benchmark_CAO_state_prep
 
 
 def _fake_target_run(**kwargs):
@@ -15,11 +15,9 @@ def test_benchmark_runs_all_reuse_targets_by_default(run_target):
     stats = benchmark_CAO_state_prep("test_code", True)
 
     assert [item["reuse_target"] for item in stats] == [
-        "qubits",
-        "balanced",
-        "depth",
+        target.value for target in BENCHMARK_REUSE_TARGETS
     ]
-    assert run_target.call_count == 3
+    assert run_target.call_count == len(BENCHMARK_REUSE_TARGETS)
     assert all(call.kwargs["reuse_decoder"] for call in run_target.call_args_list)
 
 

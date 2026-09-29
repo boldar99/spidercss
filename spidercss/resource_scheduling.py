@@ -28,7 +28,7 @@ from spidercss.resource_targets import (
     normalize_reuse_target,
     resource_target_score,
 )
-from spidercss.stim_utils import explode_circuit, get_cnot_depth
+from spidercss.stim_utils import TWO_QUBIT_GATES, explode_circuit, get_cnot_depth
 
 
 MEASUREMENT_GATES = {"M", "MX", "MY", "MZ", "MR", "MRX", "MRY"}
@@ -73,7 +73,6 @@ class ReuseTradeoffPoint:
 
 @dataclass
 class _AllocationCandidate:
-    logical_to_physical: dict[int, int]
     num_qubits: int
     cnot_depth: int
     num_reuse_merges: int
@@ -560,28 +559,73 @@ def _pareto_points(candidates: list[_AllocationCandidate]) -> list[ReuseTradeoff
     return points
 
 
+def _cnot_depth_for_mapping(
+    problem: _EventProblem,
+    order: list[int],
+    logical_to_physical: dict[int, int],
+) -> int:
+    """Computes mapped ASAP CNOT depth without constructing a Stim circuit.
+
+    This is the same recurrence as :func:`get_cnot_depth`, applied directly to
+    the already atomized event DAG.  Frontier construction calls it many times;
+    rebuilding a complete ``stim.Circuit`` for every candidate made large
+    depth-target compilations spend hours in ``stim.Circuit.append``.
+    """
+    next_free_layer: dict[int, int] = {}
+    max_layer = -1
+    for node in order:
+        data = problem.dag.nodes[node]
+        if data["op_name"] not in TWO_QUBIT_GATES:
+            continue
+
+        raw_targets = data["raw_targets"]
+        if len(raw_targets) != 2 or not all(
+            target.is_qubit_target for target in raw_targets
+        ):
+            # Classical feedback such as CX rec[-1] q is not a physical
+            # two-qubit gate and therefore occupies no CNOT layer.
+            continue
+
+        logical_first, logical_second = data["targets"]
+        first = logical_to_physical[logical_first]
+        second = logical_to_physical[logical_second]
+        if first == second:
+            raise ValueError(
+                "A reuse allocation mapped both operands of a two-qubit gate "
+                "to the same physical qubit."
+            )
+        layer = max(
+            next_free_layer.get(first, 0),
+            next_free_layer.get(second, 0),
+        )
+        next_free_layer[first] = layer + 1
+        next_free_layer[second] = layer + 1
+        max_layer = max(max_layer, layer)
+    return max_layer + 1
+
+
 def _build_reuse_frontier(
     problem: _EventProblem,
     order: list[int],
     lifetimes: list[LogicalLifetime],
     n_data: int,
     minimum_mapping: dict[int, int],
-) -> list[_AllocationCandidate]:
+) -> tuple[list[_AllocationCandidate], list[tuple[int, int]]]:
     """Builds a deterministic no-reuse to maximum-reuse candidate path.
 
     Reuse links are ordered by their measured one-link CNOT-depth cost and then
-    by idle gap.  Every prefix is emitted and measured.  Consequently the
+    by idle gap.  Every prefix is measured directly from its mapped CNOTs,
+    without emitting a Stim circuit.  Consequently the
     frontier always contains the no-reuse depth lower bound and the globally
     minimum interval coloring, plus useful intermediate allocations.
     """
     no_reuse_mapping, no_reuse_width = _mapping_from_merge_links(
         lifetimes, n_data, []
     )
-    no_reuse_circuit = emit_scheduled_circuit(problem, order, no_reuse_mapping)
-    baseline_depth = get_cnot_depth(no_reuse_circuit)
+    baseline_depth = _cnot_depth_for_mapping(problem, order, no_reuse_mapping)
     candidates = [
         _AllocationCandidate(
-            no_reuse_mapping, no_reuse_width, baseline_depth, num_reuse_merges=0
+            no_reuse_width, baseline_depth, num_reuse_merges=0
         )
     ]
 
@@ -592,7 +636,7 @@ def _build_reuse_frontier(
         mapping, _ = _mapping_from_merge_links(
             lifetimes, n_data, [(previous, following)]
         )
-        depth = get_cnot_depth(emit_scheduled_circuit(problem, order, mapping))
+        depth = _cnot_depth_for_mapping(problem, order, mapping)
         measured_links.append(
             (depth - baseline_depth, gap, previous, following)
         )
@@ -604,16 +648,18 @@ def _build_reuse_frontier(
         mapping, width = _mapping_from_merge_links(
             lifetimes, n_data, selected_links
         )
-        circuit = emit_scheduled_circuit(problem, order, mapping)
         candidates.append(
             _AllocationCandidate(
-                mapping,
                 width,
-                get_cnot_depth(circuit),
+                _cnot_depth_for_mapping(problem, order, mapping),
                 num_reuse_merges=len(selected_links),
             )
         )
-    return candidates
+    ordered_links = [
+        (previous, following)
+        for _, _, previous, following in measured_links
+    ]
+    return candidates, ordered_links
 
 
 def _remap_targets(
@@ -711,10 +757,9 @@ def plan_resource_aware_reuse(
         )
 
     if target is ReuseTarget.QUBITS:
-        scheduled_circuit = emit_scheduled_circuit(problem, order, minimum_mapping)
-        cnot_depth = get_cnot_depth(scheduled_circuit)
+        selected_mapping = minimum_mapping
+        cnot_depth = _cnot_depth_for_mapping(problem, order, selected_mapping)
         selected = _AllocationCandidate(
-            minimum_mapping,
             minimum_qubits,
             cnot_depth,
             num_reuse_merges=len(problem.lifetimes) - minimum_qubits,
@@ -722,7 +767,7 @@ def plan_resource_aware_reuse(
         candidates = [selected]
         allocation_status = "OPTIMAL_INTERVAL_COLORING"
     else:
-        candidates = _build_reuse_frontier(
+        candidates, ordered_links = _build_reuse_frontier(
             problem,
             order,
             problem.lifetimes,
@@ -755,16 +800,30 @@ def plan_resource_aware_reuse(
                     active_volume,
                 ),
             )
-        scheduled_circuit = emit_scheduled_circuit(
-            problem, order, selected.logical_to_physical
+        selected_mapping, selected_width = _mapping_from_merge_links(
+            problem.lifetimes,
+            n_data,
+            ordered_links[:selected.num_reuse_merges],
         )
+        if selected_width != selected.num_qubits:
+            raise AssertionError(
+                "Selected reuse candidate width changed while rebuilding its mapping."
+            )
         cnot_depth = selected.cnot_depth
         allocation_status = "GREEDY_REUSE_FRONTIER"
+
+    # Candidate evaluation above is purely arithmetic.  Construct the Stim
+    # circuit only once, after the target has selected its allocation.
+    scheduled_circuit = emit_scheduled_circuit(problem, order, selected_mapping)
+    if get_cnot_depth(scheduled_circuit) != cnot_depth:
+        raise AssertionError(
+            "Direct mapped CNOT-depth evaluation disagrees with emitted Stim circuit."
+        )
 
     return ResourceSchedulePlan(
         circuit=scheduled_circuit,
         order=order,
-        logical_to_physical=selected.logical_to_physical,
+        logical_to_physical=selected_mapping,
         lifetimes=problem.lifetimes,
         peak_qubits=selected.num_qubits,
         cnot_depth=cnot_depth,
