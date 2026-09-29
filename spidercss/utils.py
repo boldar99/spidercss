@@ -311,14 +311,17 @@ def get_project_root() -> Path:
 
 
 def load_FAO_circ(code: str) -> stim.Circuit:
-    from spidercss.stim_utils import remove_FAO_data_measurements
+    from spidercss.stim_utils import remove_FAO_data_measurements, permute_qubits
     n, _, _ = get_n_k_d(code + ".json")
 
     root = get_project_root()
     file = root.joinpath("assets", "circuits", "FAO", f"{code}.stim")
     circ = stim.Circuit.from_file(file)
     circ.insert(0, stim.CircuitInstruction("R", range(circ.num_qubits)))
-    return remove_FAO_data_measurements(circ, n)
+    filtered_circ = remove_FAO_data_measurements(circ, n)
+    qubit_perm = {i: (i + n) % filtered_circ.num_qubits for i in range(circ.num_qubits)}
+    print(qubit_perm)
+    return permute_qubits(filtered_circ, qubit_perm)
 
 
 def load_qecc(code: str, method: str | None = None):

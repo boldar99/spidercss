@@ -343,3 +343,15 @@ def remove_FAO_data_measurements(circ: stim.Circuit, n: int) -> stim.Circuit:
         if not (is_meas and is_data) and o.name != "QUBIT_COORDS":
             stim_str += str(o) + "\n"
     return stim.Circuit(stim_str)
+
+def permute_qubits(circ, qubit_to_qubit_mapping: dict[int, int]) -> stim.Circuit:
+    new_circ = stim.Circuit()
+    for op in circ:
+        new_targets = []
+        for t in op.targets_copy():
+            if t.is_qubit_target:
+                new_targets.append(qubit_to_qubit_mapping.get(t.value, t.value))
+            else:
+                new_targets.append(t)
+        new_circ.append(op.name, new_targets, op.gate_args_copy())
+    return new_circ
