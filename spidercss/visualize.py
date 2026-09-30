@@ -208,8 +208,11 @@ def plot_depth_sim_qubits_scatter(codes, grouped_stats, fao_stats, colors, plots
     import matplotlib.lines as mlines
     
     for code in codes:
-        fao_depth = fao_stats[code].get("depth_max", 0)
-        fao_sim = fao_stats[code].get("num_qubits_max", 0)
+        fao_depth_max = fao_stats[code].get("depth_max", 0)
+        fao_sim_max = fao_stats[code].get("num_qubits_max", 0)
+        
+        fao_depth_min = fao_stats[code].get("depth_min", 0)
+        fao_sim_min = fao_stats[code].get("num_qubits_min", 0)
         
         # In new benchmark format, we can find the best CSSCat for this code
         # and it has both max and min reuse inside the json
@@ -217,32 +220,40 @@ def plot_depth_sim_qubits_scatter(codes, grouped_stats, fao_stats, colors, plots
         if not css_rs:
             continue
         
-        # Just use the best one (or any, since max/min reuse properties might be the same globally)
         valid_css = [r for r in css_rs if r.get("logical_error_rate") is not None]
         best_css = min(valid_css, key=lambda x: x["logical_error_rate"]) if valid_css else css_rs[0]
         
-        d_opt_depth = best_css.get("depth_min", -2)
-        d_opt_sim = best_css.get("num_qubits_min", 0)
+        spider_depth_min = best_css.get("depth_min", -2)
+        spider_sim_min = best_css.get("num_qubits_min", 0)
         
-        s_opt_depth = best_css.get("depth_max", -2)
-        s_opt_sim = best_css.get("num_qubits_max", 0)
+        spider_depth_max = best_css.get("depth_max", -2)
+        spider_sim_max = best_css.get("num_qubits_max", 0)
         
-        plt.plot([fao_depth, d_opt_depth], [fao_sim, d_opt_sim], color='gray', alpha=0.4, zorder=1)
-        plt.plot([fao_depth, s_opt_depth], [fao_sim, s_opt_sim], color='gray', alpha=0.4, zorder=1)
+        # Connect min_reuse pair
+        plt.plot([fao_depth_min, spider_depth_min], [fao_sim_min, spider_sim_min], color='gray', alpha=0.4, zorder=1)
+        # Connect max_reuse pair
+        plt.plot([fao_depth_max, spider_depth_max], [fao_sim_max, spider_sim_max], color='gray', alpha=0.4, zorder=1)
         
-        plt.scatter(fao_depth, fao_sim, color=colors["Flag at Origin"], zorder=2, s=50)
-        plt.scatter(d_opt_depth, d_opt_sim, color=colors["SpiderCSS"], zorder=2, s=50, marker='^')
-        plt.scatter(s_opt_depth, s_opt_sim, color=colors["SpiderCSS"], zorder=2, s=50, marker='s')
+        # Scatter min_reuse (triangles)
+        plt.scatter(fao_depth_min, fao_sim_min, color=colors["Flag at Origin"], zorder=2, s=50, marker='^')
+        plt.scatter(spider_depth_min, spider_sim_min, color=colors["SpiderCSS"], zorder=2, s=50, marker='^')
+        
+        # Scatter max_reuse (squares)
+        plt.scatter(fao_depth_max, fao_sim_max, color=colors["Flag at Origin"], zorder=2, s=50, marker='s')
+        plt.scatter(spider_depth_max, spider_sim_max, color=colors["SpiderCSS"], zorder=2, s=50, marker='s')
 
     plt.xlabel("Circuit Depth")
     plt.ylabel("Simultaneous Qubits")
     plt.grid(True, ls="--", alpha=0.5)
     
+    # Legend setup
     fao_marker = mlines.Line2D([], [], color=colors["Flag at Origin"], marker='o', linestyle='None', markersize=8, label='Flag at Origin')
-    spider_depth_marker = mlines.Line2D([], [], color=colors["SpiderCSS"], marker='^', linestyle='None', markersize=8, label='SpiderCSS (Depth Opt.)')
-    spider_sim_marker = mlines.Line2D([], [], color=colors["SpiderCSS"], marker='s', linestyle='None', markersize=8, label='SpiderCSS (Sim Qubit Opt.)')
+    spider_marker = mlines.Line2D([], [], color=colors["SpiderCSS"], marker='o', linestyle='None', markersize=8, label='SpiderCSS')
     
-    plt.legend(handles=[fao_marker, spider_depth_marker, spider_sim_marker])
+    min_reuse_marker = mlines.Line2D([], [], color='gray', marker='^', linestyle='None', markersize=8, label='Min Reuse (Depth Opt.)')
+    max_reuse_marker = mlines.Line2D([], [], color='gray', marker='s', linestyle='None', markersize=8, label='Max Reuse (Sim Qubit Opt.)')
+    
+    plt.legend(handles=[fao_marker, spider_marker, min_reuse_marker, max_reuse_marker])
     plt.tight_layout()
     plt.savefig(os.path.join(plots_dir, "depth_sim_qubits_scatter.png"), dpi=300)
     plt.savefig(os.path.join(plots_dir, "depth_sim_qubits_scatter.pdf"))
