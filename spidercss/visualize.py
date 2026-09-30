@@ -151,10 +151,17 @@ def plot_mirrored_histogram(codes, best_stats, fao_stats, colors, plots_dir):
     plt.close()
 
 def plot_ler_vs_code(codes, best_stats, fao_stats, colors, plots_dir):
-    plt.figure(figsize=(10, 5))
-    x_positions = np.arange(len(codes))
+    # Only use codes that have LER numbers
+    filtered_codes = [
+        c for c in codes
+        if best_stats[c].get("logical_error_rate") is not None
+        and fao_stats[c].get("logical_error_rate") is not None
+    ]
     
-    for i, code in enumerate(codes):
+    plt.figure(figsize=(10, 5))
+    x_positions = np.arange(len(filtered_codes))
+    
+    for i, code in enumerate(filtered_codes):
         fao_mid = fao_stats[code].get("logical_error_rate")
         fao_samples = fao_stats[code].get("num_samples", 0) * fao_stats[code].get("acceptance_rate", 1.0)
         if fao_mid is not None:
@@ -177,7 +184,7 @@ def plot_ler_vs_code(codes, best_stats, fao_stats, colors, plots_dir):
     plt.yscale("log")
     
     labels = []
-    for code in codes:
+    for code in filtered_codes:
         n = best_stats[code].get("n")
         k = best_stats[code].get("k")
         d = best_stats[code].get("d")
@@ -188,7 +195,7 @@ def plot_ler_vs_code(codes, best_stats, fao_stats, colors, plots_dir):
     plt.ylabel("Logical Error Rate")
     plt.legend()
     plt.grid(True, which="both", axis="y", ls="--", alpha=0.3)
-    for i in range(len(codes) - 1):
+    for i in range(len(filtered_codes) - 1):
         plt.axvline(x=i + 0.5, color='gray', linestyle='-', alpha=0.5)
         
     plt.tight_layout()
