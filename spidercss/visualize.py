@@ -259,30 +259,52 @@ def plot_depth_sim_qubits_scatter(codes, grouped_stats, fao_stats, colors, plots
     ax.tick_params(axis='x', rotation=45, labelsize=9)
     ax.tick_params(axis='y', labelsize=9)
     
-    # Two arrows (pointing to square and triangle) for each specified code
-    # 1. [[25, 1, 5]]
-    ax.annotate("[[25, 1, 5]]", xy=(8, 46), xytext=(18, 18), fontsize=9.5,
-                arrowprops=dict(arrowstyle="->", color="black", lw=0.8))
-    ax.annotate("", xy=(38, 29), xytext=(18, 18),
-                arrowprops=dict(arrowstyle="->", color="black", lw=0.8))
+    # Styled labels with badges and smooth curved dual arrows
+    bbox_props = dict(boxstyle="round,pad=0.28", facecolor="white", edgecolor="#999999", lw=0.8, alpha=0.95)
+    arrow_kw = dict(arrowstyle="->", color="#333333", lw=1.1)
 
-    # 2. [[49, 1, 7]]
-    ax.annotate("[[49, 1, 7]]", xy=(18, 101), xytext=(35, 78), fontsize=9.5,
-                arrowprops=dict(arrowstyle="->", color="black", lw=0.8))
-    ax.annotate("", xy=(129, 65), xytext=(55, 78),
-                arrowprops=dict(arrowstyle="->", color="black", lw=0.8))
+    label_configs = [
+        {
+            "text": "[[25, 1, 5]]",
+            "pos": (22, 17),
+            "tri": (8, 46),
+            "sq": (38, 29),
+            "rad_tri": 0.12,
+            "rad_sq": -0.12,
+        },
+        {
+            "text": "[[49, 1, 7]]",
+            "pos": (72, 85),
+            "tri": (18, 101),
+            "sq": (129, 65),
+            "rad_tri": 0.08,
+            "rad_sq": -0.08,
+        },
+        {
+            "text": "[[49, 1, 5]]",
+            "pos": (95, 160),
+            "tri": (56, 154),
+            "sq": (195, 89),
+            "rad_tri": -0.10,
+            "rad_sq": 0.10,
+        },
+        {
+            "text": "[[47, 1, 11]]",
+            "pos": (420, 290),
+            "tri": (289, 435),
+            "sq": (635, 185),
+            "rad_tri": 0.08,
+            "rad_sq": -0.08,
+        },
+    ]
 
-    # 3. [[49, 1, 5]]
-    ax.annotate("[[49, 1, 5]]", xy=(29, 128), xytext=(85, 115), fontsize=9.5,
-                arrowprops=dict(arrowstyle="->", color="black", lw=0.8))
-    ax.annotate("", xy=(195, 89), xytext=(105, 115),
-                arrowprops=dict(arrowstyle="->", color="black", lw=0.8))
-
-    # 4. [[47, 1, 11]]
-    ax.annotate("[[47, 1, 11]]", xy=(289, 435), xytext=(450, 240), fontsize=9.5,
-                arrowprops=dict(arrowstyle="->", color="black", lw=0.8))
-    ax.annotate("", xy=(635, 185), xytext=(450, 240),
-                arrowprops=dict(arrowstyle="->", color="black", lw=0.8))
+    for cfg in label_configs:
+        tri_arrow = dict(**arrow_kw, connectionstyle=f"arc3,rad={cfg['rad_tri']}")
+        sq_arrow = dict(**arrow_kw, connectionstyle=f"arc3,rad={cfg['rad_sq']}")
+        ax.annotate(cfg["text"], xy=cfg["tri"], xytext=cfg["pos"], fontsize=9.5,
+                    bbox=bbox_props, arrowprops=tri_arrow, zorder=4)
+        ax.annotate("", xy=cfg["sq"], xytext=cfg["pos"],
+                    arrowprops=sq_arrow, zorder=4)
 
     plt.xlabel("Circuit Depth")
     plt.ylabel("Simultaneous Qubits")
