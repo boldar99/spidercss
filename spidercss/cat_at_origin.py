@@ -18,18 +18,21 @@ from spidercss.stim_utils import get_cnot_depth
 
 def row_optimized_cat_at_origin(H: np.ndarray, d: int, basis="Z", max_basis_tries: int = 10_000,
                                 analyze_hook_errors=False, is_perfect_code=False,
-                                reuse_target: ReuseTarget | str = ReuseTarget.NONE):
+                                reuse_target: ReuseTarget | str = ReuseTarget.NONE,
+                                routing_heuristic: str | None = None):
     t = (d - 1) // 2
     _, matrix_after_row_ops = row_optimize_matrix(H, t, max_basis_tries)
     return cat_at_origin(
         matrix_after_row_ops, d, basis=basis, analyze_hook_errors=analyze_hook_errors,
-        is_perfect_code=is_perfect_code, reuse_target=reuse_target
+        is_perfect_code=is_perfect_code, reuse_target=reuse_target,
+        routing_heuristic=routing_heuristic
     )
 
 
 def cat_at_origin(H: np.ndarray, d: int, draw_solutions=False, basis="Z", *,
                   analyze_hook_errors=False, _hook_results=None, is_perfect_code=False,
-                  reuse_target: ReuseTarget | str = ReuseTarget.NONE) -> stim.Circuit:
+                  reuse_target: ReuseTarget | str = ReuseTarget.NONE,
+                  routing_heuristic: str | None = None) -> stim.Circuit:
     if not has_unique_ones_property(H):
         raise ValueError(f"H is not representing a bipartite graph state.")
 
@@ -260,7 +263,7 @@ def cat_at_origin(H: np.ndarray, d: int, draw_solutions=False, basis="Z", *,
     )
 
     if reuse_target == ReuseTarget.NONE:
-        base_circ = _generate_circuit_for_heuristic("sa_sequence_distance")
+        base_circ = _generate_circuit_for_heuristic(routing_heuristic or "sa_sequence_distance")
         reuse_plan = plan_resource_aware_reuse(
             base_circ, N, heuristic="naive", target=ReuseTarget.NONE
         )
@@ -300,7 +303,7 @@ def cat_at_origin(H: np.ndarray, d: int, draw_solutions=False, basis="Z", *,
         return reuse_plan.circuit
     else:
         # Fallback for BALANCED or others
-        base_circ = _generate_circuit_for_heuristic("sa_sequence_distance")
+        base_circ = _generate_circuit_for_heuristic(routing_heuristic or "sa_sequence_distance")
         reuse_plan = plan_resource_aware_reuse(
             base_circ, N, heuristic="decross_greedy", target=reuse_target
         )

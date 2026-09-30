@@ -81,7 +81,9 @@ def main():
         
         code_col = multirow_code
 
-        for m_idx, m_name in enumerate(["FaO", "CSSCat"]):
+        from spidercss.cat_at_origin import BENCHMARK_ROUTING_HEURISTICS
+        method_names = ["FaO"] + [f"CSSCat ({h})" for h in BENCHMARK_ROUTING_HEURISTICS]
+        for m_idx, m_name in enumerate(method_names):
             if m_name not in methods_data:
                 continue
             r = methods_data[m_name]

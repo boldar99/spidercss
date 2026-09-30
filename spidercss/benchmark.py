@@ -209,11 +209,7 @@ def run_simulation(code, method_name, circ_with_reuse, scheduled_circ, H_x, H_z,
         print(f"Logical Error Rate = {stats['logical_error_rate']:.4e}", end=";\t ")
     if stats['acceptance_rate'] is not None:
         print(f"Acceptance Rate = {stats['acceptance_rate']:.4f}", end=";\t ")
-    print(f"CXs = {stats['num_cx']}", end=";\t ")
-    print(f"Max Reuse Qubits = {stats['num_qubits_max']}", end=";\t ")
-    print(f"Max Reuse Depth = {stats['depth_max']}", end=";\t ")
-    print(f"Min Reuse Qubits = {stats['num_qubits_min']}", end=";\t ")
-    print(f"Min Reuse Depth = {stats['depth_min']}")
+    print(f"CXs = {stats['num_cx']}")
     print()
 
     json_file = f"simulation_results/{code}_{method_name}_{circ_hash}.json"
@@ -259,25 +255,36 @@ def benchmark_state_prep(code: str, p: float, num_samples_fn, estimate_ler: bool
     # ==========================
     # SpiderCSS Processing
     # ==========================
-    print(f"[{code}] Generating SpiderCSS circuits...")
+    BENCHMARK_ROUTING_HEURISTICS = (
+        "joint_resource",
+        "critical_path_first",
+        "earliest_start_first",
+        "active_spider_first",
+        "sa_sequence_distance",
+    )
+    print(f"[{code}] Generating SpiderCSS Max/Min Reuse circuits...")
     
-    # 1. Max Reuse
+    # 1. Max Reuse (Global optimal over all heuristics)
     cao_max = cat_at_origin(matrix_after_row_ops, d, basis=basis, analyze_hook_errors=True, _hook_results=hook_results, is_perfect_code=is_perfect_code, reuse_target=ReuseTarget.QUBITS)
     num_qubits_max_cao = cao_max.num_qubits
     depth_max_cao = get_cnot_depth(cao_max)
+    print(f"[{code} SpiderCSS] Max Reuse -> Qubits: {num_qubits_max_cao}, Depth: {depth_max_cao}")
 
-    # 2. Min Reuse (Depth Preserving)
+    # 2. Min Reuse (Global optimal over all heuristics)
     cao_min = cat_at_origin(matrix_after_row_ops, d, basis=basis, analyze_hook_errors=True, _hook_results=hook_results, is_perfect_code=is_perfect_code, reuse_target=ReuseTarget.DEPTH)
     num_qubits_min_cao = cao_min.num_qubits
     depth_min_cao = get_cnot_depth(cao_min)
+    print(f"[{code} SpiderCSS] Min Reuse -> Qubits: {num_qubits_min_cao}, Depth: {depth_min_cao}")
 
-    # 3. No Reuse (Exact Scheduled)
-    cao_none = cat_at_origin(matrix_after_row_ops, d, basis=basis, analyze_hook_errors=True, _hook_results=hook_results, is_perfect_code=is_perfect_code, reuse_target=ReuseTarget.NONE)
-    cao_dag = build_circuit_dag(cao_none)
-    cao_scheduled, _ = dag_to_circuit(cao_dag, heuristic="greedy", random_seed=seed_val)
+    # 3. No Reuse (Exact Scheduled) - evaluated per heuristic
+    for routing_heuristic in BENCHMARK_ROUTING_HEURISTICS:
+        print(f"[{code}] Generating SpiderCSS LER simulation circuit for {routing_heuristic}...")
+        cao_none = cat_at_origin(matrix_after_row_ops, d, basis=basis, analyze_hook_errors=True, _hook_results=hook_results, is_perfect_code=is_perfect_code, reuse_target=ReuseTarget.NONE, routing_heuristic=routing_heuristic)
+        cao_dag = build_circuit_dag(cao_none)
+        cao_scheduled, _ = dag_to_circuit(cao_dag, heuristic="exact", random_seed=seed_val)
 
-    stats_cao = run_simulation(code, "SpiderCSS", cao_none, cao_scheduled, H_x, H_z, L_z, max_weight, p, num_samples, estimate_ler, num_qubits_max_cao, depth_max_cao, num_qubits_min_cao, depth_min_cao)
-    all_stats.append(stats_cao)
+        stats_cao = run_simulation(code, f"CSSCat ({routing_heuristic})", cao_none, cao_scheduled, H_x, H_z, L_z, max_weight, p, num_samples, estimate_ler, num_qubits_max_cao, depth_max_cao, num_qubits_min_cao, depth_min_cao)
+        all_stats.append(stats_cao)
 
     # ==========================
     # FAO Processing
@@ -289,15 +296,17 @@ def benchmark_state_prep(code: str, p: float, num_samples_fn, estimate_ler: bool
     fao_max = plan_resource_aware_reuse(fao_circ, n_data, heuristic="decross_greedy", target=ReuseTarget.QUBITS)
     num_qubits_max_fao = fao_max.circuit.num_qubits
     depth_max_fao = get_cnot_depth(fao_max.circuit)
+    print(f"[{code} FaO] Max Reuse -> Qubits: {num_qubits_max_fao}, Depth: {depth_max_fao}")
 
     # 2. Min Reuse
     fao_min = plan_resource_aware_reuse(fao_circ, n_data, heuristic="naive", target=ReuseTarget.QUBITS)
     num_qubits_min_fao = fao_min.circuit.num_qubits
     depth_min_fao = get_cnot_depth(fao_min.circuit)
+    print(f"[{code} FaO] Min Reuse -> Qubits: {num_qubits_min_fao}, Depth: {depth_min_fao}")
 
     # 3. No Reuse (Exact Scheduled)
     fao_dag = build_circuit_dag(fao_circ)
-    fao_scheduled, _ = dag_to_circuit(fao_dag, heuristic="greedy", random_seed=seed_val)
+    fao_scheduled, _ = dag_to_circuit(fao_dag, heuristic="exact", random_seed=seed_val)
 
     stats_fao = run_simulation(code, "FaO", fao_circ, fao_scheduled, H_x, H_z, L_z, max_weight, p, num_samples, estimate_ler, num_qubits_max_fao, depth_max_fao, num_qubits_min_fao, depth_min_fao)
     all_stats.append(stats_fao)
