@@ -131,10 +131,9 @@ def run_simulation(code, method_name, circ_with_reuse, scheduled_circ, H_x, H_z,
     _G_H_X = H_z
     _G_L_X = L_z
     
-    if _G_DECODER is None and estimate_ler:
-        _G_DECODER = LutDecoder(H_z, max_decodable_weight=max_weight, verbose=True)
-
     if remaining_samples > 0:
+        if _G_DECODER is None and estimate_ler:
+            _G_DECODER = LutDecoder(H_z, max_decodable_weight=max_weight, verbose=True)
         batch_size = 1_000_000
         num_full_batches = remaining_samples // batch_size
         remainder = remaining_samples % batch_size
@@ -253,6 +252,34 @@ def benchmark_state_prep(code: str, p: float, num_samples_fn, estimate_ler: bool
     all_stats = []
 
     # ==========================
+    # FAO Processing
+    # ==========================
+    print(f"[{code}] Generating FAO circuits...")
+    try:
+        fao_circ = load_FAO_circ(code)
+
+        # 1. Max Reuse
+        fao_max = plan_resource_aware_reuse(fao_circ, n_data, heuristic="decross_greedy", target=ReuseTarget.QUBITS)
+        num_qubits_max_fao = fao_max.circuit.num_qubits
+        depth_max_fao = get_cnot_depth(fao_max.circuit)
+        print(f"[{code} FaO] Max Reuse -> Qubits: {num_qubits_max_fao}, Depth: {depth_max_fao}")
+
+        # 2. Min Reuse
+        fao_min = plan_resource_aware_reuse(fao_circ, n_data, heuristic="naive", target=ReuseTarget.QUBITS)
+        num_qubits_min_fao = fao_min.circuit.num_qubits
+        depth_min_fao = get_cnot_depth(fao_min.circuit)
+        print(f"[{code} FaO] Min Reuse -> Qubits: {num_qubits_min_fao}, Depth: {depth_min_fao}")
+
+        # 3. No Reuse (Exact Scheduled)
+        fao_dag = build_circuit_dag(fao_circ)
+        fao_scheduled, _ = dag_to_circuit(fao_dag, heuristic="exact", random_seed=seed_val)
+
+        stats_fao = run_simulation(code, "FaO", fao_circ, fao_scheduled, H_x, H_z, L_z, max_weight, p, num_samples, estimate_ler, num_qubits_max_fao, depth_max_fao, num_qubits_min_fao, depth_min_fao)
+        all_stats.append(stats_fao)
+    except:
+        print(f"[{code}] Generating FAO circuit failed...")
+
+    # ==========================
     # SpiderCSS Processing
     # ==========================
     BENCHMARK_ROUTING_HEURISTICS = (
@@ -286,31 +313,6 @@ def benchmark_state_prep(code: str, p: float, num_samples_fn, estimate_ler: bool
         stats_cao = run_simulation(code, f"CSSCat ({routing_heuristic})", cao_none, cao_scheduled, H_x, H_z, L_z, max_weight, p, num_samples, estimate_ler, num_qubits_max_cao, depth_max_cao, num_qubits_min_cao, depth_min_cao)
         all_stats.append(stats_cao)
 
-    # ==========================
-    # FAO Processing
-    # ==========================
-    print(f"[{code}] Generating FAO circuits...")
-    fao_circ = load_FAO_circ(code)
-
-    # 1. Max Reuse
-    fao_max = plan_resource_aware_reuse(fao_circ, n_data, heuristic="decross_greedy", target=ReuseTarget.QUBITS)
-    num_qubits_max_fao = fao_max.circuit.num_qubits
-    depth_max_fao = get_cnot_depth(fao_max.circuit)
-    print(f"[{code} FaO] Max Reuse -> Qubits: {num_qubits_max_fao}, Depth: {depth_max_fao}")
-
-    # 2. Min Reuse
-    fao_min = plan_resource_aware_reuse(fao_circ, n_data, heuristic="naive", target=ReuseTarget.QUBITS)
-    num_qubits_min_fao = fao_min.circuit.num_qubits
-    depth_min_fao = get_cnot_depth(fao_min.circuit)
-    print(f"[{code} FaO] Min Reuse -> Qubits: {num_qubits_min_fao}, Depth: {depth_min_fao}")
-
-    # 3. No Reuse (Exact Scheduled)
-    fao_dag = build_circuit_dag(fao_circ)
-    fao_scheduled, _ = dag_to_circuit(fao_dag, heuristic="exact", random_seed=seed_val)
-
-    stats_fao = run_simulation(code, "FaO", fao_circ, fao_scheduled, H_x, H_z, L_z, max_weight, p, num_samples, estimate_ler, num_qubits_max_fao, depth_max_fao, num_qubits_min_fao, depth_min_fao)
-    all_stats.append(stats_fao)
-
     return all_stats
 
 
@@ -334,5 +336,5 @@ def benchmark_very_hard_codes():
 
 if __name__ == "__main__":
     benchmark_simple_codes()
-    # benchmark_hard_codes()
+    benchmark_hard_codes()
     # benchmark_very_hard_codes()
