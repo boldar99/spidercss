@@ -242,8 +242,8 @@ def plot_depth_sim_qubits_scatter(codes, grouped_stats, fao_stats, colors, plots
         plt.scatter(fao_depth_max, fao_sim_max, color=colors["Flag at Origin"], zorder=2, s=50, marker='s')
         plt.scatter(spider_depth_max, spider_sim_max, color=colors["SpiderCSS"], zorder=2, s=50, marker='s')
 
-    plt.xscale("log")
-    plt.yscale("log")
+    plt.xscale("function", functions=(lambda x: x**0.5, lambda x: x**2))
+    plt.yscale("function", functions=(lambda x: x**0.5, lambda x: x**2))
     
     plt.xlabel("Circuit Depth")
     plt.ylabel("Simultaneous Qubits")
