@@ -1,6 +1,18 @@
 import os
 import matplotlib.pyplot as plt
+import matplotlib.patches as mpatches
 import numpy as np
+
+class RoundCentered(mpatches.BoxStyle.Round):
+    def __init__(self, pad=0.28, y_shift=0.09, rounding_size=None):
+        super().__init__(pad=pad, rounding_size=rounding_size)
+        self.y_shift = y_shift
+
+    def __call__(self, x0, y0, width, height, mutation_size):
+        shift = mutation_size * self.y_shift
+        return super().__call__(x0, y0 + shift, width, height, mutation_size)
+
+mpatches.BoxStyle._style_list['round_centered'] = RoundCentered
 
 from spidercss.results_parser import (
     wilson_score_interval,
@@ -237,12 +249,12 @@ def plot_depth_sim_qubits_scatter(codes, grouped_stats, fao_stats, colors, plots
         plt.plot([fao_depth_max, spider_depth_max], [fao_sim_max, spider_sim_max], color='gray', alpha=0.4, zorder=1)
         
         # Scatter min_reuse (triangles)
-        plt.scatter(fao_depth_min, fao_sim_min, color=colors["Flag at Origin"], zorder=2, s=50, marker='^')
-        plt.scatter(spider_depth_min, spider_sim_min, color=colors["SpiderCSS"], zorder=2, s=50, marker='^')
+        plt.scatter(fao_depth_min, fao_sim_min, color=colors["Flag at Origin"], zorder=2, s=50, marker='^', alpha=0.8)
+        plt.scatter(spider_depth_min, spider_sim_min, color=colors["SpiderCSS"], zorder=2, s=50, marker='^', alpha=0.8)
         
         # Scatter max_reuse (squares)
-        plt.scatter(fao_depth_max, fao_sim_max, color=colors["Flag at Origin"], zorder=2, s=50, marker='s')
-        plt.scatter(spider_depth_max, spider_sim_max, color=colors["SpiderCSS"], zorder=2, s=50, marker='s')
+        plt.scatter(fao_depth_max, fao_sim_max, color=colors["Flag at Origin"], zorder=2, s=50, marker='s', alpha=0.8)
+        plt.scatter(spider_depth_max, spider_sim_max, color=colors["SpiderCSS"], zorder=2, s=50, marker='s', alpha=0.8)
 
 
 
@@ -270,32 +282,32 @@ def plot_depth_sim_qubits_scatter(codes, grouped_stats, fao_stats, colors, plots
     min_reuse_marker = mlines.Line2D([], [], color='gray', marker='^', linestyle='None', markersize=8, label='Min Reuse (Depth Opt.)')
     max_reuse_marker = mlines.Line2D([], [], color='gray', marker='s', linestyle='None', markersize=8, label='Max Reuse (Sim Qubit Opt.)')
     
-    plt.legend(handles=[fao_marker, spider_marker, min_reuse_marker, max_reuse_marker], loc='lower right')
+    plt.legend(handles=[fao_marker, spider_marker, min_reuse_marker, max_reuse_marker], loc='lower right', framealpha=1.0, facecolor='white', edgecolor='#cccccc')
     plt.tight_layout()
     plt.gcf().canvas.draw()
 
     # Styled labels with badges and straight dual arrows
-    bbox_props = dict(boxstyle="round,pad=0.28", facecolor="white", edgecolor="#999999", lw=0.8, alpha=0.95)
+    bbox_props = dict(boxstyle="round_centered,pad=0.28,y_shift=0.09", facecolor="white", edgecolor="#999999", lw=0.8, alpha=1.0)
     arrow_kw = dict(arrowstyle="->", color="#333333", lw=1.1)
 
     label_configs = [
         {
             "text": "[[49, 1, 7]]",
-            "pos": (62, 108),
-            "tri": (43, 134),
-            "sq": (129, 65),
+            "pos": (120, 120),
+            "tri": (43 + 2, 134),
+            "sq": (129, 65 + 2),
         },
         {
             "text": "[[49, 1, 5]]",
-            "pos": (125, 145),
-            "tri": (56, 154),
-            "sq": (195, 89),
+            "pos": (200, 170),
+            "tri": (56 + 2, 154),
+            "sq": (195, 89 + 3),
         },
         {
             "text": "[[47, 1, 11]]",
-            "pos": (430, 280),
-            "tri": (289, 435),
-            "sq": (635, 185),
+            "pos": (550, 380),
+            "tri": (289 + 6, 435),
+            "sq": (635, 185 + 5),
         },
     ]
 
@@ -309,7 +321,7 @@ def plot_depth_sim_qubits_scatter(codes, grouped_stats, fao_stats, colors, plots
 
     for cfg in label_configs:
         t = cfg["text_obj"]
-        disp_bbox = t.get_window_extent()
+        disp_bbox = t._bbox_patch.get_window_extent()
         mid_bottom = inv.transform(((disp_bbox.x0 + disp_bbox.x1) / 2, disp_bbox.y0))
         mid_left = inv.transform((disp_bbox.x0, (disp_bbox.y0 + disp_bbox.y1) / 2))
         
