@@ -39,9 +39,11 @@ def main():
         print("No simulation results found for plotting.")
         return
 
+    import seaborn as sns
+    palette = sns.color_palette("colorblind", n_colors=4)
     colors = {
-        "SpiderCSS": "#D55E00",      # Vermillion
-        "Flag at Origin": "#0072B2"  # Blue
+        "Flag at Origin": palette[2],
+        "SpiderCSS": palette[3],
     }
 
     plot_ler_improvement_hist(codes, best_stats, fao_stats, colors, plots_dir)
@@ -257,16 +259,29 @@ def plot_depth_sim_qubits_scatter(codes, grouped_stats, fao_stats, colors, plots
     ax.tick_params(axis='x', rotation=45, labelsize=9)
     ax.tick_params(axis='y', labelsize=9)
     
-    # Manual labels for selected representative codes
-    ax.annotate("[[7, 1, 3]]", xy=(10, 8), xytext=(6, 3.5), fontsize=10,
+    # Two arrows (pointing to square and triangle) for each specified code
+    # 1. [[25, 1, 5]]
+    ax.annotate("[[25, 1, 5]]", xy=(8, 46), xytext=(18, 18), fontsize=9.5,
                 arrowprops=dict(arrowstyle="->", color="black", lw=0.8))
-    ax.annotate("[[17, 1, 5]]", xy=(47, 22), xytext=(60, 18), fontsize=10,
+    ax.annotate("", xy=(38, 29), xytext=(18, 18),
                 arrowprops=dict(arrowstyle="->", color="black", lw=0.8))
-    ax.annotate("[[23, 1, 7]]", xy=(143, 54), xytext=(170, 50), fontsize=10,
+
+    # 2. [[49, 1, 7]]
+    ax.annotate("[[49, 1, 7]]", xy=(18, 101), xytext=(35, 78), fontsize=9.5,
                 arrowprops=dict(arrowstyle="->", color="black", lw=0.8))
-    ax.annotate("[[47, 1, 11]]", xy=(635, 185), xytext=(540, 220), fontsize=10,
+    ax.annotate("", xy=(129, 65), xytext=(55, 78),
                 arrowprops=dict(arrowstyle="->", color="black", lw=0.8))
-    ax.annotate("[[95, 1, 7]]", xy=(804, 243), xytext=(720, 280), fontsize=10,
+
+    # 3. [[49, 1, 5]]
+    ax.annotate("[[49, 1, 5]]", xy=(29, 128), xytext=(85, 115), fontsize=9.5,
+                arrowprops=dict(arrowstyle="->", color="black", lw=0.8))
+    ax.annotate("", xy=(195, 89), xytext=(105, 115),
+                arrowprops=dict(arrowstyle="->", color="black", lw=0.8))
+
+    # 4. [[47, 1, 11]]
+    ax.annotate("[[47, 1, 11]]", xy=(289, 435), xytext=(450, 240), fontsize=9.5,
+                arrowprops=dict(arrowstyle="->", color="black", lw=0.8))
+    ax.annotate("", xy=(635, 185), xytext=(450, 240),
                 arrowprops=dict(arrowstyle="->", color="black", lw=0.8))
 
     plt.xlabel("Circuit Depth")
