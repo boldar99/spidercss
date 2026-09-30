@@ -649,6 +649,56 @@ def _exact_topological_optimization(dag: nx.DiGraph, max_time_seconds: float = 1
         return sorted(L, key=lambda n: solver.Value(pos[n]))
     return _hybrid_topological_optimization(dag)
 
+def _alap_topological_sort(dag: nx.DiGraph) -> list:
+    L_rev = list(nx.topological_sort(dag))
+    longest_path_to_end = {}
+    for n in reversed(L_rev):
+        succs = list(dag.successors(n))
+        longest_path_to_end[n] = max([longest_path_to_end[s] for s in succs] + [0]) + 1
+        
+    first_node_for_q = {}
+    last_meas_for_q = {}
+    for node in L_rev:
+        data = dag.nodes[node]
+        targets = data.get("targets", [])
+        if isinstance(targets, int): targets = [targets]
+        elif isinstance(targets, tuple): targets = list(targets)
+        op_name = data.get("op_name", "")
+        is_meas = op_name in {"M", "MX", "MR", "MZ"}
+        for q in targets:
+            if q not in first_node_for_q: first_node_for_q[q] = node
+            if is_meas: last_meas_for_q[q] = node
+    
+    ancilla_qubits = set(last_meas_for_q.keys())
+    
+    def is_data_cnot(n):
+        data = dag.nodes[n]
+        targets = data.get("targets", [])
+        if isinstance(targets, int): targets = [targets]
+        elif isinstance(targets, tuple): targets = list(targets)
+        op_name = data.get("op_name", "")
+        if op_name not in {"CX", "CNOT", "CZ", "CY", "XCZ", "YCX"}: return False
+        for q in targets:
+            if q not in ancilla_qubits: return True
+        return False
+
+    in_degree = {n: dag.in_degree(n) for n in dag.nodes()}
+    ready = [n for n in dag.nodes() if in_degree[n] == 0]
+    
+    L = []
+    while ready:
+        ready.sort(key=lambda n: (longest_path_to_end[n], not is_data_cnot(n)), reverse=True)
+        
+        n = ready.pop(0)
+        L.append(n)
+        for succ in dag.successors(n):
+            in_degree[succ] -= 1
+            if in_degree[succ] == 0:
+                ready.append(succ)
+                
+    return L
+
+
 def dag_to_circuit(dag: nx.DiGraph, heuristic: str | None = "exact", random_seed: int = 0) -> tuple[stim.Circuit, dict[int, int]]:
     """
     Converts a circuit dependency DAG back into a Stim circuit and a measurement map.
@@ -675,8 +725,8 @@ def dag_to_circuit(dag: nx.DiGraph, heuristic: str | None = "exact", random_seed
         sorted_nodes = _hybrid_topological_optimization(dag)
     elif heuristic == "exact":
         sorted_nodes = _exact_topological_optimization(dag, random_seed=random_seed)
-    elif heuristic == "exact_cnot":
-        sorted_nodes = _exact_cnot_topological_optimization(dag)
+    elif heuristic == "alap":
+        sorted_nodes = _alap_topological_sort(dag)
     else:
         raise ValueError(f"Unknown heuristic: {heuristic}")
 

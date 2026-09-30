@@ -3,6 +3,8 @@ import math
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 import numpy as np
+import matplotlib.lines as mlines
+import seaborn as sns
 
 class RoundCentered(mpatches.BoxStyle.Round):
     def __init__(self, pad=0.28, y_shift=0.09, rounding_size=None):
@@ -53,10 +55,12 @@ def main():
         return
 
     import seaborn as sns
-    palette = sns.color_palette("colorblind", n_colors=4)
+    palette = sns.color_palette("colorblind", n_colors=6)
     colors = {
         "Flag at Origin": palette[2],
         "SpiderCSS": palette[3],
+        "Min Reuse": palette[0],
+        "Max Reuse": palette[3],
     }
 
     # plot_mirrored_histogram(codes, best_stats, fao_stats, palette, plots_dir)
@@ -64,6 +68,7 @@ def main():
     plot_ler_vs_code(codes, best_stats, fao_stats, colors, plots_dir)
     plot_depth_sim_qubits_scatter(codes, grouped_stats, fao_stats, colors, plots_dir)
     plot_improvement_scatter_ler_ar(codes, best_stats, fao_stats, colors, plots_dir)
+    plot_improvement_scatter_depth_sim_qubits(codes, best_stats, fao_stats, colors, plots_dir)
     print(f"Plots saved to {plots_dir}")
 
 def plot_independent_histograms(codes, best_stats, fao_stats, colors, plots_dir):
@@ -264,7 +269,7 @@ def plot_ler_vs_code(codes, best_stats, fao_stats, colors, plots_dir):
         and fao_stats[c].get("logical_error_rate") is not None
     ]
     
-    plt.figure(figsize=(10, 5))
+    plt.figure(figsize=(7, 6))
     x_positions = np.arange(len(filtered_codes))
     
     for i, code in enumerate(filtered_codes):
@@ -297,7 +302,7 @@ def plot_ler_vs_code(codes, best_stats, fao_stats, colors, plots_dir):
         labels.append(f"[[{n},{k},{d}]]")
         
     plt.xticks(x_positions, labels)
-    plt.tick_params(axis='x', bottom=False)
+    plt.tick_params(axis='x', bottom=False, rotation=45, labelsize=12)
     plt.ylabel("Logical Error Rate")
     plt.legend()
     plt.grid(True, which="both", axis="y", ls="--", alpha=0.3)
@@ -310,7 +315,7 @@ def plot_ler_vs_code(codes, best_stats, fao_stats, colors, plots_dir):
     plt.close()
 
 def plot_depth_sim_qubits_scatter(codes, grouped_stats, fao_stats, colors, plots_dir):
-    plt.figure(figsize=(7, 6))
+    plt.figure(figsize=(7, 5))
     import matplotlib.lines as mlines
     
     for code in codes:
@@ -465,19 +470,18 @@ def plot_improvement_scatter_ler_ar(codes, best_stats, fao_stats, colors, plots_
     base_dot = plt.scatter([0], [0], color='black', marker='P', s=200, edgecolors='white', label='Flag at Origin Baseline')
     acode_dots = plt.scatter(ler_improvements, ar_improvements, color=colors["SpiderCSS"], s=60, alpha=0.7, edgecolors='white', label='Code')
 
-    plt.xlim(-150, 100)
-    plt.ylim(-15, 60)
+    plt.xlim(-100, 100)
+    plt.ylim(-15, 50)
     
     plt.xlabel("Improvement to Logical Error Rates")
     plt.ylabel("Improvement to Acceptance Rate")
-    plt.title("SpiderCSS vs Flag at Origin (LER & AR)")
     plt.grid(True, linestyle='--', alpha=0.3)
     plt.legend(loc='lower left', handles=[acode_dots, avg_dot, base_dot])
 
     plt.gcf().canvas.draw()
     
     # current_xticks = list(ax.get_xticks())[1:-1]
-    current_xticks = sorted(list(set(list(ax.get_xticks())[1:-1] + [-125, -75, -25, 25, 75])))
+    current_xticks = sorted(list(set(list(ax.get_xticks()))))
     new_xticks = current_xticks + [avg_ler]
     ax.set_xticks(new_xticks)
     ax.set_xticklabels(["" if t == 25 else f"{t:g}%" for t in current_xticks] + [f"{avg_ler:.1f}%"])
@@ -490,6 +494,161 @@ def plot_improvement_scatter_ler_ar(codes, best_stats, fao_stats, colors, plots_
     plt.tight_layout()
     plt.savefig(os.path.join(plots_dir, "scatter_ler_ar.png"), dpi=300)
     plt.savefig(os.path.join(plots_dir, "scatter_ler_ar.pdf"))
+    plt.close()
+
+def plot_improvement_scatter_depth_sim_qubits(codes, best_stats, fao_stats, colors, plots_dir, reuse="both"):
+    min_d_imp, min_q_imp = [], []
+    max_d_imp, max_q_imp = [], []
+    connected_pairs = []
+
+    for code in codes:
+        css = best_stats[code]
+        if isinstance(css, list):
+            css_rs = [r for r in css if r.get("method", "").startswith("SpiderCSS")]
+            valid_css = [r for r in css_rs if r.get("logical_error_rate") is not None]
+            css = min(valid_css, key=lambda x: x["logical_error_rate"]) if valid_css else (css_rs[0] if css_rs else {})
+
+        fao_d_min = fao_stats[code].get("depth_min")
+        spider_d_min = css.get("depth_min")
+        fao_q_min = fao_stats[code].get("num_qubits_min")
+        spider_q_min = css.get("num_qubits_min")
+
+        pair_min, pair_max = None, None
+        if fao_d_min and fao_d_min > 0 and spider_d_min and spider_d_min > 0 and fao_q_min and fao_q_min > 0 and spider_q_min and spider_q_min > 0:
+            d_imp = 100 * (fao_d_min - spider_d_min) / fao_d_min
+            q_imp = 100 * (fao_q_min - spider_q_min) / fao_q_min
+            min_d_imp.append(d_imp)
+            min_q_imp.append(q_imp)
+            pair_min = (d_imp, q_imp)
+
+        fao_d_max = fao_stats[code].get("depth_max")
+        spider_d_max = css.get("depth_max")
+        fao_q_max = fao_stats[code].get("num_qubits_max")
+        spider_q_max = css.get("num_qubits_max")
+
+        if fao_d_max and fao_d_max > 0 and spider_d_max and spider_d_max > 0 and fao_q_max and fao_q_max > 0 and spider_q_max and spider_q_max > 0:
+            d_imp = 100 * (fao_d_max - spider_d_max) / fao_d_max
+            q_imp = 100 * (fao_q_max - spider_q_max) / fao_q_max
+            max_d_imp.append(d_imp)
+            max_q_imp.append(q_imp)
+            pair_max = (d_imp, q_imp)
+
+        if pair_min and pair_max:
+            connected_pairs.append((pair_min, pair_max))
+
+    if reuse == "min" and not min_d_imp:
+        return
+    if reuse == "max" and not max_d_imp:
+        return
+    if reuse == "both" and not min_d_imp and not max_d_imp:
+        return
+
+    plt.figure(figsize=(7, 6))
+
+    plt.axhline(0, color='gray', linestyle='--', alpha=0.5)
+    plt.axvline(0, color='gray', linestyle='--', alpha=0.5)
+
+    # Shade top-right quadrant
+    plt.fill_between([0, 100], 0, 100, color='green', alpha=0.05, zorder=0)
+
+    ax = plt.gca()
+    base_dot = plt.scatter([0], [0], color='black', marker='P', s=230, label='Flag at Origin Baseline')
+
+    palette = sns.color_palette("colorblind", n_colors=6)
+    color_min = colors.get("Min Reuse", palette[0])
+    color_max = colors.get("Max Reuse", colors.get("SpiderCSS", palette[3]))
+    if color_min == color_max:
+        color_min = palette[0]
+
+    if reuse == "both":
+        # for p1, p2 in connected_pairs:
+        #     plt.plot([p1[0], p2[0]], [p1[1], p2[1]], color='gray', alpha=0.3, zorder=1)
+
+        min_dots = plt.scatter(min_d_imp, min_q_imp, color=color_min, marker='^', s=60, alpha=0.85, edgecolors='white', zorder=3, label='Min Reuse')
+        max_dots = plt.scatter(max_d_imp, max_q_imp, color=color_max, marker='s', s=60, alpha=0.85, edgecolors='white', zorder=3, label='Max Reuse')
+
+        avg_d_min = np.mean(min_d_imp)
+        avg_q_min = np.mean(min_q_imp)
+        avg_d_max = np.mean(max_d_imp)
+        avg_q_max = np.mean(max_q_imp)
+
+        ax.axvline(avg_d_min, color=color_min, linestyle=':', linewidth=1.2, alpha=0.7, zorder=1)
+        ax.axhline(avg_q_min, color=color_min, linestyle=':', linewidth=1.2, alpha=0.7, zorder=1)
+        ax.axvline(avg_d_max, color=color_max, linestyle='--', linewidth=1.2, alpha=0.7, zorder=1)
+        ax.axhline(avg_q_max, color=color_max, linestyle='--', linewidth=1.2, alpha=0.7, zorder=1)
+
+        plt.scatter([avg_d_min], [avg_q_min], color=color_min, marker='*', s=200, linewidths=0.8, zorder=5)
+        plt.scatter([avg_d_max], [avg_q_max], color=color_max, marker='*', s=200, linewidths=0.8, zorder=5)
+
+        avg_marker = mlines.Line2D([], [], color='black', marker='*', linestyle='None', markersize=12, label='Average')
+        base_marker = mlines.Line2D([], [], color='black', marker='P', linestyle='None', markersize=12, label='Flag at Origin Baseline')
+        plt.legend(loc='upper left', handles=[min_dots, max_dots, avg_marker, base_marker], fontsize=10)
+        averages_x = [avg_d_min, avg_d_max]
+        averages_y = [avg_q_min, avg_q_max]
+    else:
+        chosen_color = color_min if reuse == "min" else color_max
+        depth_imp = min_d_imp if reuse == "min" else max_d_imp
+        sim_imp = min_q_imp if reuse == "min" else max_q_imp
+        marker = '^' if reuse == "min" else 's'
+        label = 'Min Reuse (Depth Opt.)' if reuse == "min" else 'Max Reuse (Sim Qubit Opt.)'
+
+        acode_dots = plt.scatter(depth_imp, sim_imp, color=chosen_color, marker=marker, s=60, alpha=0.85, edgecolors='white', zorder=3, label=label)
+
+        avg_d = np.mean(depth_imp)
+        avg_q = np.mean(sim_imp)
+
+        line_style = ':' if reuse == "min" else '--'
+        ax.axvline(avg_d, color=chosen_color, linestyle=line_style, linewidth=1.2, alpha=0.7, zorder=1)
+        ax.axhline(avg_q, color=chosen_color, linestyle=line_style, linewidth=1.2, alpha=0.7, zorder=1)
+
+        plt.scatter([avg_d], [avg_q], color=chosen_color, marker='*', s=220, edgecolors='black', linewidths=0.8, zorder=5)
+
+        avg_marker = mlines.Line2D([], [], color='black', marker='*', linestyle='None', markersize=12, label='Average')
+        plt.legend(loc='upper left', handles=[acode_dots, avg_marker, base_dot], fontsize=10)
+        averages_x = [avg_d]
+        averages_y = [avg_q]
+
+    plt.xlim(-30, 100)
+    plt.ylim(-20, 50)
+
+    plt.xlabel("Improvement to Circuit Depth")
+    plt.ylabel("Improvement to Simultaneous Qubits")
+    plt.grid(True, linestyle='--', alpha=0.3)
+
+    plt.gcf().canvas.draw()
+
+    base_xticks = [-25, 0, 25, 50, 75, 100]
+    new_xticks = sorted(base_xticks + averages_x)
+    ax.set_xticks(new_xticks)
+    xticklabels = []
+    for t in new_xticks:
+        matched = [a for a in averages_x if abs(t - a) < 1e-4]
+        if matched:
+            xticklabels.append(f"{matched[0]:.1f}%")
+        elif any(abs(t - a) < 10 for a in averages_x):
+            xticklabels.append("")
+        else:
+            xticklabels.append(f"{t:g}%")
+    ax.set_xticklabels(xticklabels)
+
+    base_yticks = [-20, -10, 0, 10, 20, 30, 40, 50]
+    new_yticks = sorted(base_yticks + averages_y)
+    ax.set_yticks(new_yticks)
+    yticklabels = []
+    for t in new_yticks:
+        matched = [a for a in averages_y if abs(t - a) < 1e-4]
+        if matched:
+            yticklabels.append(f"{matched[0]:.1f}%")
+        elif any(abs(t - a) < 5 for a in averages_y):
+            yticklabels.append("")
+        else:
+            yticklabels.append(f"{t:g}%")
+    ax.set_yticklabels(yticklabels)
+
+    plt.tight_layout()
+    out_filename = "scatter_depth_sim_qubits" if reuse == "both" else f"scatter_depth_sim_qubits_{reuse}"
+    plt.savefig(os.path.join(plots_dir, f"{out_filename}.png"), dpi=300)
+    plt.savefig(os.path.join(plots_dir, f"{out_filename}.pdf"))
     plt.close()
 
 if __name__ == "__main__":
