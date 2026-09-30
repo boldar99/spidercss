@@ -226,7 +226,7 @@ def _sa_sequence_distance_order(
     edge_groups: dict[tuple[int, int], int],
     z_distances: list[list[int]],
     x_distances: list[list[int]],
-    num_iterations: int = 5000,
+    num_iterations: int = 10_000,
 ) -> list[tuple[int, int]]:
     current_order = _earliest_start_first_order(edge_list, edge_groups, z_distances, x_distances)
     current_cost = sequence_distance_cost(current_order)
@@ -274,7 +274,7 @@ def match_edges(
     z_candidates: list[list[int]],
     x_candidates: list[list[int]] | list[list[list[int]]],
     edge_groups: dict[tuple[int, int], int],
-    routing_heuristic: str = "critical_path_first",
+    routing_heuristic: str = "sa_sequence_distance",
 ) -> list[tuple[tuple[int, int], tuple[int, int]]]:
     """Constructs the fixed deterministic seed for joint matching/order search."""
     edge_list = [

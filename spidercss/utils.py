@@ -52,7 +52,7 @@ def layered_ops_to_noisy_stim_circuit(layered_ops: list[list[tuple]], num_qubits
             elif op_name in TWO_QUBIT_GATES:
                 circuit.append("DEPOLARIZE1", targets, p_2)
                 if mem_error_after_every_cnot and p_mem != 0:
-                    circuit.append("DEPOLARIZE1", set(range(num_qubits)) - set(qubit_targets), p_mem)
+                    circuit.append("DEPOLARIZE1", sorted(set(range(num_qubits)) - set(qubit_targets)), p_mem)
 
             elif op_name in SPECIAL_GATES:
                 pass
@@ -60,7 +60,7 @@ def layered_ops_to_noisy_stim_circuit(layered_ops: list[list[tuple]], num_qubits
                 circuit.append("DEPOLARIZE1", targets, p_1)
 
         if not mem_error_after_every_cnot and i != len(layered_ops) - 1 and has_physical_gates:
-            circuit.append("DEPOLARIZE1", unused_qubits, p_mem)
+            circuit.append("DEPOLARIZE1", sorted(unused_qubits), p_mem)
     return circuit
 
 
@@ -320,7 +320,6 @@ def load_FAO_circ(code: str) -> stim.Circuit:
     circ.insert(0, stim.CircuitInstruction("R", range(circ.num_qubits)))
     filtered_circ = remove_FAO_data_measurements(circ, n)
     qubit_perm = {i: (i + n) % filtered_circ.num_qubits for i in range(circ.num_qubits)}
-    print(qubit_perm)
     return permute_qubits(filtered_circ, qubit_perm)
 
 

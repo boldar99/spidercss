@@ -127,6 +127,7 @@ def characterize_stabilizer_splits(Mz_prep):
                 
         universal_sizes = set()
         for L, splits in splits_by_size.items():
+            splits.sort(key=lambda s: tuple(sorted(s)))
             if len(splits) == math.comb(N, L):
                 universal_sizes.add(L)
                 
@@ -141,7 +142,7 @@ def characterize_stabilizer_splits(Mz_prep):
             
         univ_parts = get_partitions_from_sizes(N, 0, [], universal_sizes)
         non_trivial_univ = [p for p in univ_parts if len(p) > 1]
-        non_trivial_univ.sort(key=lambda p: (min(p), -len(p)), reverse=True)
+        non_trivial_univ.sort(key=lambda p: (min(p), -len(p), tuple(p)), reverse=True)
         
         memo = {}
         def dfs(current_split, current_size):
@@ -177,7 +178,7 @@ def characterize_stabilizer_splits(Mz_prep):
         
         univ_tuples = set(tuple(p) for p in non_trivial_univ)
         non_trivial_exist = [p for p in non_trivial_exist if tuple(p) not in univ_tuples]
-        non_trivial_exist.sort(key=lambda p: (min(p), -len(p)), reverse=True)
+        non_trivial_exist.sort(key=lambda p: (min(p), -len(p), tuple(p)), reverse=True)
         
         if non_trivial_univ or non_trivial_exist:
             results[support] = {
