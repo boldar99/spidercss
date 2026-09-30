@@ -3,10 +3,10 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from spidercss.results_parser import (
-    BASELINE_DATA,
     wilson_score_interval,
     get_best_spidercss_per_code,
-    get_grouped_stats
+    get_grouped_stats,
+    get_fao_per_code
 )
 
 plt.rcParams.update({
@@ -22,13 +22,6 @@ plt.rcParams.update({
     "lines.linewidth": 1.5,
 })
 
-def _get_fao_ler(code):
-    bounds = BASELINE_DATA[code]["ler_bounds"]
-    return ((bounds[0] + bounds[1]) / 2) * (10 ** bounds[2])
-
-def _get_fao_ar(code):
-    bounds = BASELINE_DATA[code]["ar_bounds"]
-    return (bounds[0] + bounds[1]) / 2
 
 def main():
     plots_dir = os.path.join(os.path.dirname(__file__), "..", "plots")
@@ -38,7 +31,8 @@ def main():
     grouped_stats = get_grouped_stats()
     
     # Sort codes by distance, then n
-    codes = [c for c in best_stats.keys() if c in BASELINE_DATA]
+    fao_stats = get_fao_per_code()
+    codes = [c for c in best_stats.keys() if c in fao_stats]
     codes.sort(key=lambda c: (best_stats[c]["d"], best_stats[c]["n"], c))
 
     if not codes:
@@ -50,18 +44,18 @@ def main():
         "Flag at Origin": "#0072B2"  # Blue
     }
 
-    plot_ler_improvement_hist(codes, best_stats, colors, plots_dir)
-    plot_mirrored_histogram(codes, best_stats, colors, plots_dir)
-    plot_ler_vs_code(codes, best_stats, colors, plots_dir)
-    plot_depth_sim_qubits_scatter(codes, grouped_stats, colors, plots_dir)
+    plot_ler_improvement_hist(codes, best_stats, fao_stats, colors, plots_dir)
+    plot_mirrored_histogram(codes, best_stats, fao_stats, colors, plots_dir)
+    plot_ler_vs_code(codes, best_stats, fao_stats, colors, plots_dir)
+    plot_depth_sim_qubits_scatter(codes, grouped_stats, fao_stats, colors, plots_dir)
     print(f"Plots saved to {plots_dir}")
 
-def plot_ler_improvement_hist(codes, best_stats, colors, plots_dir):
+def plot_ler_improvement_hist(codes, best_stats, fao_stats, colors, plots_dir):
     improvements = []
     for code in codes:
-        fao_ler = _get_fao_ler(code)
+        fao_ler = fao_stats[code].get("logical_error_rate")
         spider_ler = best_stats[code].get("logical_error_rate")
-        if spider_ler and spider_ler > 0:
+        if spider_ler and spider_ler > 0 and fao_ler and fao_ler > 0:
             imp_pct = 100 * (fao_ler - spider_ler) / fao_ler
             improvements.append(imp_pct)
             
@@ -88,22 +82,22 @@ def plot_ler_improvement_hist(codes, best_stats, colors, plots_dir):
     plt.savefig(os.path.join(plots_dir, "ler_improvement_hist.pdf"))
     plt.close()
 
-def plot_mirrored_histogram(codes, best_stats, colors, plots_dir):
+def plot_mirrored_histogram(codes, best_stats, fao_stats, colors, plots_dir):
     ler_improvements = []
     ar_improvements = []
     
     for code in codes:
-        fao_ler = _get_fao_ler(code)
+        fao_ler = fao_stats[code].get("logical_error_rate")
         spider_ler = best_stats[code].get("logical_error_rate")
         
-        fao_ar = _get_fao_ar(code)
+        fao_ar = fao_stats[code].get("acceptance_rate")
         spider_ar = best_stats[code].get("acceptance_rate")
         
-        if spider_ler and spider_ler > 0:
+        if spider_ler and spider_ler > 0 and fao_ler and fao_ler > 0:
             ler_imp_pct = 100 * (fao_ler - spider_ler) / fao_ler
             ler_improvements.append(ler_imp_pct)
             
-        if spider_ar is not None:
+        if spider_ar is not None and fao_ar is not None:
             ar_imp_pct = 100 * (spider_ar - fao_ar) / fao_ar
             ar_improvements.append(ar_imp_pct)
             
@@ -156,18 +150,21 @@ def plot_mirrored_histogram(codes, best_stats, colors, plots_dir):
     plt.savefig(os.path.join(plots_dir, "ler_ar_mirrored_hist.pdf"))
     plt.close()
 
-def plot_ler_vs_code(codes, best_stats, colors, plots_dir):
+def plot_ler_vs_code(codes, best_stats, fao_stats, colors, plots_dir):
     plt.figure(figsize=(10, 5))
     x_positions = np.arange(len(codes))
     
     for i, code in enumerate(codes):
-        fao_bounds = BASELINE_DATA[code]["ler_bounds"]
-        fao_low = fao_bounds[0] * (10 ** fao_bounds[2])
-        fao_high = fao_bounds[1] * (10 ** fao_bounds[2])
-        fao_mid = _get_fao_ler(code)
-        plt.errorbar(i - 0.1, fao_mid, yerr=[[fao_mid - fao_low], [fao_high - fao_mid]], 
-                     fmt='o', color=colors["Flag at Origin"], capsize=5, zorder=3,
-                     label="Flag at Origin" if i == 0 else "")
+        fao_mid = fao_stats[code].get("logical_error_rate")
+        fao_samples = fao_stats[code].get("num_samples", 0) * fao_stats[code].get("acceptance_rate", 1.0)
+        if fao_mid is not None:
+            fao_low, fao_high = wilson_score_interval(fao_mid, fao_samples)
+        else:
+            fao_low, fao_high = 0, 0
+        if fao_mid is not None:
+            plt.errorbar(i - 0.1, fao_mid, yerr=[[fao_mid - fao_low], [fao_high - fao_mid]], 
+                         fmt='o', color=colors["Flag at Origin"], capsize=5, zorder=3,
+                         label="Flag at Origin" if i == 0 else "")
 
         spider_ler = best_stats[code].get("logical_error_rate")
         if spider_ler is not None:
@@ -199,13 +196,13 @@ def plot_ler_vs_code(codes, best_stats, colors, plots_dir):
     plt.savefig(os.path.join(plots_dir, "ler_vs_code.pdf"))
     plt.close()
 
-def plot_depth_sim_qubits_scatter(codes, grouped_stats, colors, plots_dir):
+def plot_depth_sim_qubits_scatter(codes, grouped_stats, fao_stats, colors, plots_dir):
     plt.figure(figsize=(7, 6))
     import matplotlib.lines as mlines
     
     for code in codes:
-        fao_depth = int(BASELINE_DATA[code].get("depth", 0))
-        fao_sim = int(BASELINE_DATA[code].get("sim_qubits", 0))
+        fao_depth = fao_stats[code].get("depth_max", 0)
+        fao_sim = fao_stats[code].get("num_qubits_max", 0)
         
         # In new benchmark format, we can find the best CSSCat for this code
         # and it has both max and min reuse inside the json
