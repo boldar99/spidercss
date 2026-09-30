@@ -59,7 +59,7 @@ def main():
         "SpiderCSS": palette[3],
     }
 
-    plot_mirrored_histogram(codes, best_stats, fao_stats, palette, plots_dir)
+    # plot_mirrored_histogram(codes, best_stats, fao_stats, palette, plots_dir)
     plot_independent_histograms(codes, best_stats, fao_stats, palette, plots_dir)
     plot_ler_vs_code(codes, best_stats, fao_stats, colors, plots_dir)
     plot_depth_sim_qubits_scatter(codes, grouped_stats, fao_stats, colors, plots_dir)
@@ -104,10 +104,10 @@ def plot_independent_histograms(codes, best_stats, fao_stats, colors, plots_dir)
 
     ler_counts, _ = np.histogram(ler_improvements, bins=ler_bins)
     ax1.bar(ler_bins[:-1], ler_counts, width=np.diff(ler_bins), align='edge', 
-            color=colors[0], edgecolor='white', label='LER Improvement')
+            color=colors[0], edgecolor='white', label='Logical Error Rate Improvement')
             
     ler_mean = np.mean(ler_improvements)
-    ax1.axvline(ler_mean, color='black', linestyle='--', linewidth=1.5)
+    ax1.axvline(ler_mean, color='black', linestyle='--', linewidth=1.5, label='Average')
     
     ax1.set_ylabel("Number of Codes")
     ax1.set_xlabel("Improvement to Logical Error Rate")
@@ -145,10 +145,10 @@ def plot_independent_histograms(codes, best_stats, fao_stats, colors, plots_dir)
     
     ar_counts, _ = np.histogram(ar_improvements, bins=ar_bins)
     ax2.bar(ar_bins[:-1], ar_counts, width=np.diff(ar_bins), align='edge', 
-            color=colors[1], edgecolor='white', label='AR Improvement')
+            color=colors[1], edgecolor='white', label='Acceptance Rate Improvement')
             
     ar_mean = np.mean(ar_improvements)
-    ax2.axvline(ar_mean, color='black', linestyle='--', linewidth=1.5)
+    ax2.axvline(ar_mean, color='black', linestyle='--', linewidth=1.5, label='Average')
     
     ax2.set_ylabel("Number of Codes")
     ax2.set_xlabel("Improvement to Acceptance Rate")
@@ -321,9 +321,9 @@ def plot_depth_sim_qubits_scatter(codes, grouped_stats, fao_stats, colors, plots
         fao_depth_min = fao_stats[code].get("depth_min", 0)
         fao_sim_min = fao_stats[code].get("num_qubits_min", 0)
         
-        # In new benchmark format, we can find the best CSSCat for this code
+        # In new benchmark format, we can find the best SpiderCSS for this code
         # and it has both max and min reuse inside the json
-        css_rs = [r for r in grouped_stats[code] if r.get("method", "").startswith("CSSCat")]
+        css_rs = [r for r in grouped_stats[code] if r.get("method", "").startswith("SpiderCSS")]
         if not css_rs:
             continue
         
