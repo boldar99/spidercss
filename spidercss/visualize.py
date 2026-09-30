@@ -259,53 +259,6 @@ def plot_depth_sim_qubits_scatter(codes, grouped_stats, fao_stats, colors, plots
     ax.tick_params(axis='x', rotation=45, labelsize=9)
     ax.tick_params(axis='y', labelsize=9)
     
-    # Styled labels with badges and smooth curved dual arrows
-    bbox_props = dict(boxstyle="round,pad=0.28", facecolor="white", edgecolor="#999999", lw=0.8, alpha=0.95)
-    arrow_kw = dict(arrowstyle="->", color="#333333", lw=1.1)
-
-    label_configs = [
-        {
-            "text": "[[25, 1, 5]]",
-            "pos": (22, 17),
-            "tri": (8, 46),
-            "sq": (38, 29),
-            "rad_tri": 0.12,
-            "rad_sq": -0.12,
-        },
-        {
-            "text": "[[49, 1, 7]]",
-            "pos": (72, 85),
-            "tri": (18, 101),
-            "sq": (129, 65),
-            "rad_tri": 0.08,
-            "rad_sq": -0.08,
-        },
-        {
-            "text": "[[49, 1, 5]]",
-            "pos": (95, 160),
-            "tri": (56, 154),
-            "sq": (195, 89),
-            "rad_tri": -0.10,
-            "rad_sq": 0.10,
-        },
-        {
-            "text": "[[47, 1, 11]]",
-            "pos": (420, 290),
-            "tri": (289, 435),
-            "sq": (635, 185),
-            "rad_tri": 0.08,
-            "rad_sq": -0.08,
-        },
-    ]
-
-    for cfg in label_configs:
-        tri_arrow = dict(**arrow_kw, connectionstyle=f"arc3,rad={cfg['rad_tri']}")
-        sq_arrow = dict(**arrow_kw, connectionstyle=f"arc3,rad={cfg['rad_sq']}")
-        ax.annotate(cfg["text"], xy=cfg["tri"], xytext=cfg["pos"], fontsize=9.5,
-                    bbox=bbox_props, arrowprops=tri_arrow, zorder=4)
-        ax.annotate("", xy=cfg["sq"], xytext=cfg["pos"],
-                    arrowprops=sq_arrow, zorder=4)
-
     plt.xlabel("Circuit Depth")
     plt.ylabel("Simultaneous Qubits")
     plt.grid(True, which="both", ls="--", alpha=0.5)
@@ -319,6 +272,54 @@ def plot_depth_sim_qubits_scatter(codes, grouped_stats, fao_stats, colors, plots
     
     plt.legend(handles=[fao_marker, spider_marker, min_reuse_marker, max_reuse_marker], loc='lower right')
     plt.tight_layout()
+    plt.gcf().canvas.draw()
+
+    # Styled labels with badges and straight dual arrows
+    bbox_props = dict(boxstyle="round,pad=0.28", facecolor="white", edgecolor="#999999", lw=0.8, alpha=0.95)
+    arrow_kw = dict(arrowstyle="->", color="#333333", lw=1.1)
+
+    label_configs = [
+        {
+            "text": "[[49, 1, 7]]",
+            "pos": (62, 108),
+            "tri": (43, 134),
+            "sq": (129, 65),
+        },
+        {
+            "text": "[[49, 1, 5]]",
+            "pos": (125, 145),
+            "tri": (56, 154),
+            "sq": (195, 89),
+        },
+        {
+            "text": "[[47, 1, 11]]",
+            "pos": (430, 280),
+            "tri": (289, 435),
+            "sq": (635, 185),
+        },
+    ]
+
+    for cfg in label_configs:
+        t = ax.text(cfg["pos"][0], cfg["pos"][1], cfg["text"],
+                    ha="center", va="center", fontsize=9.5, bbox=bbox_props, zorder=5)
+        cfg["text_obj"] = t
+
+    plt.gcf().canvas.draw()
+    inv = ax.transData.inverted()
+
+    for cfg in label_configs:
+        t = cfg["text_obj"]
+        disp_bbox = t.get_window_extent()
+        mid_bottom = inv.transform(((disp_bbox.x0 + disp_bbox.x1) / 2, disp_bbox.y0))
+        mid_left = inv.transform((disp_bbox.x0, (disp_bbox.y0 + disp_bbox.y1) / 2))
+        
+        # Arrow to triangle from mid_left
+        ax.annotate("", xy=cfg["tri"], xytext=mid_left,
+                    arrowprops=arrow_kw, zorder=4)
+        # Arrow to square from mid_bottom
+        ax.annotate("", xy=cfg["sq"], xytext=mid_bottom,
+                    arrowprops=arrow_kw, zorder=4)
+
     plt.savefig(os.path.join(plots_dir, "depth_sim_qubits_scatter.png"), dpi=300)
     plt.savefig(os.path.join(plots_dir, "depth_sim_qubits_scatter.pdf"))
     plt.close()
