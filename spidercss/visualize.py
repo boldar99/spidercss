@@ -103,17 +103,17 @@ def plot_independent_histograms(codes, best_stats, fao_stats, colors, plots_dir)
     ler_bins = np.arange(ler_b_min, ler_b_max + ler_step, ler_step)
 
     ler_counts, _ = np.histogram(ler_improvements, bins=ler_bins)
-    ax1.bar(ler_bins[:-1], ler_counts, width=np.diff(ler_bins), align='edge', 
-            color=colors[0], edgecolor='white', label='Logical Error Rate Improvement')
+    bar1 = ax1.bar(ler_bins[:-1], ler_counts, width=np.diff(ler_bins), align='edge', 
+                   color=colors[0], edgecolor='white', label='Logical Error Rate Improvement')
             
     ler_mean = np.mean(ler_improvements)
-    ax1.axvline(ler_mean, color='black', linestyle='--', linewidth=1.5, label='Average')
+    line1 = ax1.axvline(ler_mean, color='black', linestyle='--', linewidth=1.5, label='Average')
     
     ax1.set_ylabel("Number of Codes")
     ax1.set_xlabel("Improvement to Logical Error Rate")
     ax1.grid(True, linestyle='--', alpha=0.5)
     ax1.axvline(0, color='gray', linewidth=2, alpha=0.8)
-    ax1.legend()
+    ax1.legend(handles=[bar1, line1])
     
     # Add tick for LER mean
     fig.canvas.draw()
@@ -144,17 +144,17 @@ def plot_independent_histograms(codes, best_stats, fao_stats, colors, plots_dir)
     ar_bins = np.arange(ar_b_min, ar_b_max + ar_step, ar_step)
     
     ar_counts, _ = np.histogram(ar_improvements, bins=ar_bins)
-    ax2.bar(ar_bins[:-1], ar_counts, width=np.diff(ar_bins), align='edge', 
-            color=colors[1], edgecolor='white', label='Acceptance Rate Improvement')
+    bar2 = ax2.bar(ar_bins[:-1], ar_counts, width=np.diff(ar_bins), align='edge', 
+                   color=colors[1], edgecolor='white', label='Acceptance Rate Improvement')
             
     ar_mean = np.mean(ar_improvements)
-    ax2.axvline(ar_mean, color='black', linestyle='--', linewidth=1.5, label='Average')
+    line2 = ax2.axvline(ar_mean, color='black', linestyle='--', linewidth=1.5, label='Average')
     
     ax2.set_ylabel("Number of Codes")
     ax2.set_xlabel("Improvement to Acceptance Rate")
     ax2.grid(True, linestyle='--', alpha=0.5)
     ax2.axvline(0, color='gray', linewidth=2, alpha=0.8)
-    ax2.legend()
+    ax2.legend(handles=[bar2, line2])
     
     # Add tick for AR mean
     fig.canvas.draw()
