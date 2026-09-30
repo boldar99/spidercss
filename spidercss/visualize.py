@@ -248,15 +248,27 @@ def plot_depth_sim_qubits_scatter(codes, grouped_stats, fao_stats, colors, plots
     plt.xscale("function", functions=(lambda x: x**0.5, lambda x: x**2))
     plt.yscale("function", functions=(lambda x: x**0.5, lambda x: x**2))
     
-    ticks = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 200, 300, 400, 500, 600, 700, 800, 900]
+    ticks = [0,5,10,20,30,40,50,75,100,150,200,250,300,400,500,600,700,800,900]
     ax = plt.gca()
     ax.set_xticks(ticks)
-    ax.set_yticks([t for t in ticks if t <= 300])
+    ax.set_yticks([t for t in ticks if t <= 500])
     ax.set_xlim(0, 900)
-    ax.set_ylim(0, 300)
+    ax.set_ylim(0, 500)
     ax.tick_params(axis='x', rotation=45, labelsize=9)
     ax.tick_params(axis='y', labelsize=9)
     
+    # Manual labels for selected representative codes
+    ax.annotate("[[7, 1, 3]]", xy=(10, 8), xytext=(6, 3.5), fontsize=10,
+                arrowprops=dict(arrowstyle="->", color="black", lw=0.8))
+    ax.annotate("[[17, 1, 5]]", xy=(47, 22), xytext=(60, 18), fontsize=10,
+                arrowprops=dict(arrowstyle="->", color="black", lw=0.8))
+    ax.annotate("[[23, 1, 7]]", xy=(143, 54), xytext=(170, 50), fontsize=10,
+                arrowprops=dict(arrowstyle="->", color="black", lw=0.8))
+    ax.annotate("[[47, 1, 11]]", xy=(635, 185), xytext=(540, 220), fontsize=10,
+                arrowprops=dict(arrowstyle="->", color="black", lw=0.8))
+    ax.annotate("[[95, 1, 7]]", xy=(804, 243), xytext=(720, 280), fontsize=10,
+                arrowprops=dict(arrowstyle="->", color="black", lw=0.8))
+
     plt.xlabel("Circuit Depth")
     plt.ylabel("Simultaneous Qubits")
     plt.grid(True, which="both", ls="--", alpha=0.5)
@@ -268,7 +280,7 @@ def plot_depth_sim_qubits_scatter(codes, grouped_stats, fao_stats, colors, plots
     min_reuse_marker = mlines.Line2D([], [], color='gray', marker='^', linestyle='None', markersize=8, label='Min Reuse (Depth Opt.)')
     max_reuse_marker = mlines.Line2D([], [], color='gray', marker='s', linestyle='None', markersize=8, label='Max Reuse (Sim Qubit Opt.)')
     
-    plt.legend(handles=[fao_marker, spider_marker, min_reuse_marker, max_reuse_marker])
+    plt.legend(handles=[fao_marker, spider_marker, min_reuse_marker, max_reuse_marker], loc='lower right')
     plt.tight_layout()
     plt.savefig(os.path.join(plots_dir, "depth_sim_qubits_scatter.png"), dpi=300)
     plt.savefig(os.path.join(plots_dir, "depth_sim_qubits_scatter.pdf"))
