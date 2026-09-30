@@ -242,9 +242,12 @@ def plot_depth_sim_qubits_scatter(codes, grouped_stats, fao_stats, colors, plots
         plt.scatter(fao_depth_max, fao_sim_max, color=colors["Flag at Origin"], zorder=2, s=50, marker='s')
         plt.scatter(spider_depth_max, spider_sim_max, color=colors["SpiderCSS"], zorder=2, s=50, marker='s')
 
+    plt.xscale("log")
+    plt.yscale("log")
+    
     plt.xlabel("Circuit Depth")
     plt.ylabel("Simultaneous Qubits")
-    plt.grid(True, ls="--", alpha=0.5)
+    plt.grid(True, which="both", ls="--", alpha=0.5)
     
     # Legend setup
     fao_marker = mlines.Line2D([], [], color=colors["Flag at Origin"], marker='o', linestyle='None', markersize=8, label='Flag at Origin')
