@@ -34,14 +34,14 @@ def main():
             try:
                 stats = json.load(file)
                 code_raw = stats.get("code")
-                code_data = load_qecc_data(code_raw)
-                stats["n"] = code_data["n"]
-                stats["k"] = code_data["k"]
-                stats["d"] = code_data["d"]
-                stats["label"] = code_data.get("abbr_name", "")
-                data.append(stats)
+                code_data = load_qecc_data(code_raw, "FAO")
             except Exception:
-                continue
+                code_data = load_qecc_data(code_raw)
+            stats["n"] = code_data["n"]
+            stats["k"] = code_data["k"]
+            stats["d"] = code_data["d"]
+            stats["label"] = code_data.get("abbr_name", "")
+            data.append(stats)
                 
     data.sort(key=lambda x: (x["d"], x["n"], x.get("code", ""), x.get("method", "")))
     
@@ -129,8 +129,8 @@ def main():
             multirow_ler = f"\\multirow{{2}}{{*}}{{{ler_latex}}}"
             multirow_ar = f"\\multirow{{2}}{{*}}{{{ar_latex}}}"
             
-            print(f"{code_col} & {multirow_method} & {multirow_routing} & {multirow_cx} & {multirow_flags} & Sim.\\@ Qubits & {r.get('num_qubits_max')} & {r.get('depth_max')} & {multirow_ler} & {multirow_ar} \\\\")
-            print(f" & & & & & Depth & {r.get('num_qubits_min')} & {r.get('depth_min')} & & \\\\")
+            print(f"{code_col} & {multirow_method} & {multirow_routing} & {multirow_cx} & {multirow_flags} & sim.\\@ qubits & {r.get('num_qubits_max')} & {r.get('depth_max')} & {multirow_ler} & {multirow_ar} \\\\")
+            print(f" & & & & & depth & {r.get('num_qubits_min')} & {r.get('depth_min')} & & \\\\")
             
             if m_idx < len(methods_to_plot) - 1:
                 print(f"\\cmidrule{{2-10}}")
