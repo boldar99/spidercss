@@ -1,3 +1,11 @@
+from spidercss.resource_targets import ReuseTarget
+BENCHMARK_REUSE_TARGETS = (
+    ReuseTarget.QUBITS,
+    ReuseTarget.DEPTH,
+    ReuseTarget.BALANCED,
+    ReuseTarget.NONE,
+)
+
 import os
 import multiprocessing as mp
 os.environ["KMP_WARNINGS"] = "0"
@@ -266,7 +274,7 @@ def benchmark_state_prep(code: str, p: float, num_samples_fn, estimate_ler: bool
     # 3. No Reuse (Exact Scheduled)
     cao_none = cat_at_origin(matrix_after_row_ops, d, basis=basis, analyze_hook_errors=True, _hook_results=hook_results, is_perfect_code=is_perfect_code, reuse_target=ReuseTarget.NONE)
     cao_dag = build_circuit_dag(cao_none)
-    cao_scheduled, _ = dag_to_circuit(cao_dag, heuristic="exact")
+    cao_scheduled, _ = dag_to_circuit(cao_dag, heuristic="greedy", random_seed=seed_val)
 
     stats_cao = run_simulation(code, "SpiderCSS", cao_none, cao_scheduled, H_x, H_z, L_z, max_weight, p, num_samples, estimate_ler, num_qubits_max_cao, depth_max_cao, num_qubits_min_cao, depth_min_cao)
     all_stats.append(stats_cao)
@@ -289,7 +297,7 @@ def benchmark_state_prep(code: str, p: float, num_samples_fn, estimate_ler: bool
 
     # 3. No Reuse (Exact Scheduled)
     fao_dag = build_circuit_dag(fao_circ)
-    fao_scheduled, _ = dag_to_circuit(fao_dag, heuristic="exact")
+    fao_scheduled, _ = dag_to_circuit(fao_dag, heuristic="greedy", random_seed=seed_val)
 
     stats_fao = run_simulation(code, "FaO", fao_circ, fao_scheduled, H_x, H_z, L_z, max_weight, p, num_samples, estimate_ler, num_qubits_max_fao, depth_max_fao, num_qubits_min_fao, depth_min_fao)
     all_stats.append(stats_fao)
@@ -304,7 +312,7 @@ def benchmark(code_iterator, p, num_samples, estimate_ler=True):
 
 
 def benchmark_simple_codes():
-    return benchmark(list(FAO_simp_QECCS())[5:], 0.001, num_samples=lambda d: 100_000_000 if d < 6 else 500_000_000, estimate_ler=True)
+    return benchmark(FAO_simp_QECCS(), 0.001, num_samples=lambda d: 100_000_000 if d < 6 else 100_000_000, estimate_ler=True)
 
 
 def benchmark_hard_codes():

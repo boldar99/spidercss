@@ -40,6 +40,8 @@ def cat_at_origin(H: np.ndarray, d: int, draw_solutions=False, basis="Z", *,
     pivots_perm = [row for row, col in sorted(pivots.items(), key=lambda item: item[1])]
     non_pivots = [p for p in range(N) if p not in pivots.values()]
     assert len(rows_without_pivots) == 0
+    if is_perfect_code:
+        analyze_hook_errors = False
 
     M_prep = get_conj_M(H)
     if analyze_hook_errors:

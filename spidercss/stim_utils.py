@@ -355,3 +355,55 @@ def permute_qubits(circ, qubit_to_qubit_mapping: dict[int, int]) -> stim.Circuit
                 new_targets.append(t)
         new_circ.append(op.name, new_targets, op.gate_args_copy())
     return new_circ
+import stim
+
+def fix_FAO_flags(circ: stim.Circuit, num_ancillas: int) -> stim.Circuit:
+    first_cx_control = {}
+    
+    # 1. Identify Z-type ancillas
+    for inst in circ:
+        if inst.name == 'CX':
+            targets = [t.value for t in inst.targets_copy() if t.is_qubit_target]
+            for i in range(0, len(targets), 2):
+                c_q = targets[i]
+                t_q = targets[i+1]
+                if c_q < num_ancillas and c_q not in first_cx_control:
+                    first_cx_control[c_q] = True
+                if t_q < num_ancillas and t_q not in first_cx_control:
+                    first_cx_control[t_q] = False
+                    
+    z_ancillas = set(q for q, is_ctrl in first_cx_control.items() if not is_ctrl)
+    
+    # 2. Rebuild circuit, stripping H gates from Z-type ancillas if they are right before an M gate
+    fixed_circ = stim.Circuit()
+    insts = list(circ)
+    
+    for i, inst in enumerate(insts):
+        if inst.name == 'H':
+            new_targets = []
+            for t in inst.targets_copy():
+                if not t.is_qubit_target:
+                    continue
+                q = t.value
+                
+                if q in z_ancillas:
+                    # Check if the next instruction involving this qubit is M
+                    is_right_before_m = False
+                    for j in range(i+1, len(insts)):
+                        next_inst = insts[j]
+                        if any(nt.is_qubit_target and nt.value == q for nt in next_inst.targets_copy()):
+                            if next_inst.name in ('M', 'MZ', 'MX'):
+                                is_right_before_m = True
+                            break
+                    if is_right_before_m:
+                        continue # Skip appending this target, i.e., remove H gate
+                
+                new_targets.append(t)
+                
+            if new_targets:
+                fixed_circ.append('H', new_targets)
+                
+        else:
+            fixed_circ.append(inst.name, inst.targets_copy(), inst.gate_args_copy())
+            
+    return fixed_circ

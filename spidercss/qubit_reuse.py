@@ -527,7 +527,7 @@ def _compute_D_weights_cnot(dag: nx.DiGraph) -> dict[int, int]:
         
     return D
 
-def _exact_topological_optimization(dag: nx.DiGraph, max_time_seconds: float = 15.0) -> list:
+def _exact_topological_optimization(dag: nx.DiGraph, max_time_seconds: float = 15.0, random_seed: int = 0) -> list:
     try:
         from ortools.sat.python import cp_model
     except ImportError:
@@ -594,13 +594,37 @@ def _exact_topological_optimization(dag: nx.DiGraph, max_time_seconds: float = 1
                     first_cnot_for_q[q] = node
                 last_cnot_for_q[q] = node
 
+    ancilla_qubits = set(last_meas_for_q.keys())
+    
     D_cnot = {n: 0 for n in cnot_nodes}
-    for n in first_cnot_for_q.values(): D_cnot[n] -= 1
-    for n in last_cnot_for_q.values(): D_cnot[n] += 1
+    for q, n in first_cnot_for_q.items():
+        if q in ancilla_qubits:
+            D_cnot[n] -= 1
+    for q, n in last_cnot_for_q.items():
+        if q in ancilla_qubits:
+            D_cnot[n] += 1
+            
+    for n in cnot_nodes:
+        targets = dag.nodes[n].get("targets", [])
+        if isinstance(targets, int): targets = [targets]
+        for q in targets:
+            if q not in ancilla_qubits:
+                D_cnot[n] -= 1
     
     D_abs = {n: 0 for n in L}
-    for n in first_node_for_q.values(): D_abs[n] -= 1
-    for n in last_meas_for_q.values(): D_abs[n] += 1
+    for q, n in first_node_for_q.items():
+        if q in ancilla_qubits:
+            D_abs[n] -= 1
+    for q, n in last_meas_for_q.items():
+        if q in ancilla_qubits:
+            D_abs[n] += 1
+            
+    for n in L:
+        targets = dag.nodes[n].get("targets", [])
+        if isinstance(targets, int): targets = [targets]
+        for q in targets:
+            if q not in ancilla_qubits:
+                D_abs[n] -= 1
     
     primary_obj = sum(cnot_pos[n] * D_cnot[n] for n in cnot_nodes if D_cnot[n] != 0) if cnot_nodes else 0
     secondary_obj = sum(pos[n] * D_abs[n] for n in L if D_abs[n] != 0)
@@ -610,7 +634,10 @@ def _exact_topological_optimization(dag: nx.DiGraph, max_time_seconds: float = 1
     model.Minimize(objective_expr)
     
     solver = cp_model.CpSolver()
-    solver.parameters.max_time_in_seconds = max_time_seconds
+    solver.parameters.max_deterministic_time = max_time_seconds
+    solver.parameters.num_search_workers = 1
+    solver.parameters.random_seed = int(random_seed) % (2**31 - 1)
+    solver.parameters.randomize_search = False
     
     # Provide the hybrid solver's solution as a hint to accelerate the search
     hint_L = _hybrid_topological_optimization(dag)
@@ -622,7 +649,7 @@ def _exact_topological_optimization(dag: nx.DiGraph, max_time_seconds: float = 1
         return sorted(L, key=lambda n: solver.Value(pos[n]))
     return _hybrid_topological_optimization(dag)
 
-def dag_to_circuit(dag: nx.DiGraph, heuristic: str | None = "exact") -> tuple[stim.Circuit, dict[int, int]]:
+def dag_to_circuit(dag: nx.DiGraph, heuristic: str | None = "exact", random_seed: int = 0) -> tuple[stim.Circuit, dict[int, int]]:
     """
     Converts a circuit dependency DAG back into a Stim circuit and a measurement map.
     Extraction MUST be done in topological order to respect causality constraints.
@@ -636,6 +663,10 @@ def dag_to_circuit(dag: nx.DiGraph, heuristic: str | None = "exact") -> tuple[st
     measurement_map: dict[int, int] = {}
     next_measurement_index = 0
 
+    if random_seed is not None:
+        import random
+        random.seed(random_seed)
+
     if heuristic is None or heuristic == "none":
         sorted_nodes = list(nx.topological_sort(dag))
     elif heuristic == "greedy":
@@ -643,7 +674,7 @@ def dag_to_circuit(dag: nx.DiGraph, heuristic: str | None = "exact") -> tuple[st
     elif heuristic == "hybrid":
         sorted_nodes = _hybrid_topological_optimization(dag)
     elif heuristic == "exact":
-        sorted_nodes = _exact_topological_optimization(dag)
+        sorted_nodes = _exact_topological_optimization(dag, random_seed=random_seed)
     elif heuristic == "exact_cnot":
         sorted_nodes = _exact_cnot_topological_optimization(dag)
     else:
