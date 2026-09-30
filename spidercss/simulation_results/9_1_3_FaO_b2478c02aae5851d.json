@@ -10,7 +10,7 @@
     "acceptance_rate": 0.96226878,
     "raw_acceptance_rate": 0.96226878,
     "num_cx": 26,
-    "num_flags": 0,
+    "num_flags": 9,
     "num_qubits_original": 18,
     "num_qubits_max": 11,
     "depth_max": 20,

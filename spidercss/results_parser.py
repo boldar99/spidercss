@@ -42,7 +42,7 @@ def get_best_spidercss_per_code(results_dir: str = DEFAULT_RESULTS_DIR) -> Dict[
     grouped = get_grouped_stats(results_dir)
     best_per_code = {}
     for code, group in grouped.items():
-        css_rs = [r for r in group if r.get("method", "").startswith("CSSCat")]
+        css_rs = [r for r in group if r.get("method", "").startswith("SpiderCSS")]
         if not css_rs:
             continue
         valid_css = [r for r in css_rs if r.get("logical_error_rate") is not None]

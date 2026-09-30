@@ -102,14 +102,14 @@ def run_simulation(code, method_name, circ_with_reuse, scheduled_circ, H_x, H_z,
             all(target.is_qubit_target for target in targets[index:index + 2])
             for index in range(0, len(targets), 2)
         )
-    num_flags = circ_with_reuse.num_detectors
+    num_flags = circ_with_reuse.num_qubits - H_z.shape[1]
     num_qubits_original = circ_with_reuse.num_qubits
 
     circ_str = str(noisy_circ)
     circ_hash = hashlib.sha256(circ_str.encode()).hexdigest()[:16]
 
     os.makedirs("simulation_results", exist_ok=True)
-    csv_file = f"simulation_results/{code}_{method_name}_{circ_hash}.csv"
+    csv_file = f"simulation_results/{code}_{circ_hash}.csv"
 
     total_shots = 0
     total_flagged = 0
@@ -310,7 +310,7 @@ def benchmark_state_prep(code: str, p: float, num_samples_fn, estimate_ler: bool
         cao_dag = build_circuit_dag(cao_none)
         cao_scheduled, _ = dag_to_circuit(cao_dag, heuristic="exact", random_seed=seed_val)
 
-        stats_cao = run_simulation(code, f"CSSCat ({routing_heuristic})", cao_none, cao_scheduled, H_x, H_z, L_z, max_weight, p, num_samples, estimate_ler, num_qubits_max_cao, depth_max_cao, num_qubits_min_cao, depth_min_cao)
+        stats_cao = run_simulation(code, f"SpiderCSS ({routing_heuristic})", cao_none, cao_scheduled, H_x, H_z, L_z, max_weight, p, num_samples, estimate_ler, num_qubits_max_cao, depth_max_cao, num_qubits_min_cao, depth_min_cao)
         all_stats.append(stats_cao)
 
     return all_stats

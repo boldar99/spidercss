@@ -71,7 +71,7 @@ def main():
         fao_r = next((r for r in group if r["method"] == "FaO"), None)
         
         # Extract best SpiderCSS
-        css_rs = [r for r in group if r["method"].startswith("CSSCat")]
+        css_rs = [r for r in group if r["method"].startswith("SpiderCSS")]
         best_css_r = None
         if css_rs:
             # Filter out None LERs if possible
@@ -85,7 +85,7 @@ def main():
         if fao_r: methods_to_plot.append((fao_r, "FaO", None))
         if best_css_r:
             m_name = best_css_r["method"]
-            h_str = m_name.replace("CSSCat (", "").replace(")", "")
+            h_str = m_name.replace("SpiderCSS (", "").replace(")", "")
             methods_to_plot.append((best_css_r, "SpiderCSS", h_str))
 
         num_rows = len(methods_to_plot) * 2
