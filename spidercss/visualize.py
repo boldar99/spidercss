@@ -1,4 +1,5 @@
 import os
+import math
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 import numpy as np
@@ -58,42 +59,119 @@ def main():
         "SpiderCSS": palette[3],
     }
 
-    plot_ler_improvement_hist(codes, best_stats, fao_stats, colors, plots_dir)
-    plot_mirrored_histogram(codes, best_stats, fao_stats, colors, plots_dir)
+    plot_mirrored_histogram(codes, best_stats, fao_stats, palette, plots_dir)
+    plot_independent_histograms(codes, best_stats, fao_stats, palette, plots_dir)
     plot_ler_vs_code(codes, best_stats, fao_stats, colors, plots_dir)
     plot_depth_sim_qubits_scatter(codes, grouped_stats, fao_stats, colors, plots_dir)
     print(f"Plots saved to {plots_dir}")
 
-def plot_ler_improvement_hist(codes, best_stats, fao_stats, colors, plots_dir):
-    improvements = []
+def plot_independent_histograms(codes, best_stats, fao_stats, colors, plots_dir):
+    ler_improvements = []
+    ar_improvements = []
+    font = {
+        # 'family': 'serif',
+        # 'color': 'darkred',
+        # 'weight': 'normal',
+        'size': 10,
+    }
+    
     for code in codes:
         fao_ler = fao_stats[code].get("logical_error_rate")
         spider_ler = best_stats[code].get("logical_error_rate")
-        if spider_ler and spider_ler > 0 and fao_ler and fao_ler > 0:
-            imp_pct = 100 * (fao_ler - spider_ler) / fao_ler
-            improvements.append(imp_pct)
-            
-    if not improvements:
-        return
         
-    plt.figure(figsize=(8, 5))
-    min_imp = min(improvements)
-    max_imp = max(improvements)
-    bins = np.linspace(min_imp, max_imp, 21)
+        fao_ar = fao_stats[code].get("acceptance_rate")
+        spider_ar = best_stats[code].get("acceptance_rate")
+        
+        if spider_ler and spider_ler > 0 and fao_ler and fao_ler > 0:
+            ler_imp_pct = 100 * (fao_ler - spider_ler) / fao_ler
+            ler_improvements.append(ler_imp_pct)
+            
+        if spider_ar is not None and fao_ar is not None:
+            ar_imp_pct = 100 * (spider_ar - fao_ar) / fao_ar
+            ar_improvements.append(ar_imp_pct)
+            
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(8, 6))
     
-    counts, _, patches = plt.hist(improvements, bins=bins, 
-                                  color=colors.get("SpiderCSS", "C1"), edgecolor='white')
-                                  
-    mean_imp = np.mean(improvements)
-    plt.axvline(mean_imp, color='black', linestyle='--', linewidth=1.5, 
-                label=f'Mean: {mean_imp:.1f}%')
-                
-    plt.xlabel(r"LER Improvement (%)")
-    plt.ylabel("Number of Codes")
-    plt.legend()
+    # LER Histogram
+    ler_min = min(ler_improvements) if ler_improvements else 0
+    ler_max = max(ler_improvements) if ler_improvements else 100
+    
+    # 0 falls between two bins, step of 10 gives ~20 bins for range of 200
+    ler_step = 10
+    ler_b_min = math.floor(ler_min / ler_step) * ler_step
+    ler_b_max = math.ceil(ler_max / ler_step) * ler_step
+    ler_bins = np.arange(ler_b_min, ler_b_max + ler_step, ler_step)
+
+    ler_counts, _ = np.histogram(ler_improvements, bins=ler_bins)
+    ax1.bar(ler_bins[:-1], ler_counts, width=np.diff(ler_bins), align='edge', 
+            color=colors[0], edgecolor='white', label='LER Improvement')
+            
+    ler_mean = np.mean(ler_improvements)
+    ax1.axvline(ler_mean, color='black', linestyle='--', linewidth=1.5)
+    
+    ax1.set_ylabel("Number of Codes")
+    ax1.set_xlabel("Improvement to Logical Error Rate")
+    ax1.grid(True, linestyle='--', alpha=0.5)
+    ax1.axvline(0, color='gray', linewidth=2, alpha=0.8)
+    ax1.legend()
+    
+    # Add tick for LER mean
+    fig.canvas.draw()
+    current_ticks = list(ax1.get_xticks())[1:-1]
+    new_ticks = current_ticks + [ler_mean]
+    ax1.set_xticks(new_ticks)
+    labels = [f"{t:g}%" for t in current_ticks] + [f"{ler_mean:.1f}%"]
+    ax1.set_xticklabels(labels)
+    ax1.tick_params(axis='x', labelsize=10)
+    
+    # AR Histogram
+    raw_ar_min = min(ar_improvements) if ar_improvements else 0
+    ar_min = min(0, raw_ar_min) # Start at 0 if possible, or lower if negatives exist
+    ar_max = max(ar_improvements) if ar_improvements else 5
+    
+    # Find nice step for ~20 bins
+    target_ar_bins = 20
+    raw_ar_step = (ar_max - ar_min) / target_ar_bins if ar_max > ar_min else 1
+    nice_ar_steps = [0.1, 0.2, 0.25, 0.5, 1.0, 2.0, 5.0]
+    ar_step = nice_ar_steps[-1]
+    for s in nice_ar_steps:
+        if s >= raw_ar_step:
+            ar_step = s
+            break
+            
+    ar_b_min = math.floor(ar_min / ar_step) * ar_step
+    ar_b_max = math.ceil(ar_max / ar_step) * ar_step
+    ar_bins = np.arange(ar_b_min, ar_b_max + ar_step, ar_step)
+    
+    ar_counts, _ = np.histogram(ar_improvements, bins=ar_bins)
+    ax2.bar(ar_bins[:-1], ar_counts, width=np.diff(ar_bins), align='edge', 
+            color=colors[1], edgecolor='white', label='AR Improvement')
+            
+    ar_mean = np.mean(ar_improvements)
+    ax2.axvline(ar_mean, color='black', linestyle='--', linewidth=1.5)
+    
+    ax2.set_ylabel("Number of Codes")
+    ax2.set_xlabel("Improvement to Acceptance Rate")
+    ax2.grid(True, linestyle='--', alpha=0.5)
+    ax2.axvline(0, color='gray', linewidth=2, alpha=0.8)
+    ax2.legend()
+    
+    # Add tick for AR mean
+    fig.canvas.draw()
+    current_ticks = list(ax2.get_xticks())[1:-1]
+    new_ticks = current_ticks + [ar_mean]
+    ax2.set_xticks(new_ticks)
+    labels = [f"{t:g}%" for t in current_ticks] + [f"{ar_mean:.1f}%"]
+    ax2.set_xticklabels(labels)
+    ax2.tick_params(axis='x', rotation=30., labelsize=9)
+    
+    for ax in [ax1, ax2]:
+        from matplotlib.ticker import MaxNLocator
+        ax.yaxis.set_major_locator(MaxNLocator(integer=True))
+        
     plt.tight_layout()
-    plt.savefig(os.path.join(plots_dir, "ler_improvement_hist.png"), dpi=300)
-    plt.savefig(os.path.join(plots_dir, "ler_improvement_hist.pdf"))
+    plt.savefig(os.path.join(plots_dir, "ler_ar_independent_hist.png"), dpi=300)
+    plt.savefig(os.path.join(plots_dir, "ler_ar_independent_hist.pdf"))
     plt.close()
 
 def plot_mirrored_histogram(codes, best_stats, fao_stats, colors, plots_dir):
@@ -115,49 +193,64 @@ def plot_mirrored_histogram(codes, best_stats, fao_stats, colors, plots_dir):
             ar_imp_pct = 100 * (spider_ar - fao_ar) / fao_ar
             ar_improvements.append(ar_imp_pct)
             
-    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(8, 6))
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(8, 6), sharex=True, gridspec_kw={'hspace': 0})
+    
+    import numpy as np
+    
+    # Unified bounds for shared X axis
+    all_data = ler_improvements + ar_improvements
+    global_min = min(all_data) if all_data else -10
+    global_max = max(all_data) if all_data else 100
+    
+    # We want ~20 bins for LER, and ~40 bins for AR.
+    # To ensure 0 is a boundary, we choose a fixed step like 10
+    # Range is ~200, so step=10 gives ~20 bins.
+    ler_step = 10
+    ar_step = 5
+    
+    # Round to nearest multiple of ler_step to ensure 0 is on a boundary
+    b_min = math.floor(global_min / ler_step) * ler_step
+    b_max = math.ceil(global_max / ler_step) * ler_step
+    
+    import numpy as np
+    ler_bins = np.arange(b_min, b_max + ler_step, ler_step)
+    ar_bins = np.arange(b_min, b_max + ar_step, ar_step)
     
     # LER Histogram (Top)
-    ler_min = min(ler_improvements) if ler_improvements else 0
-    ler_max = max(ler_improvements) if ler_improvements else 100
-    ler_bins = np.linspace(ler_min, ler_max, 21)
-    
     ler_counts, _ = np.histogram(ler_improvements, bins=ler_bins)
     ax1.bar(ler_bins[:-1], ler_counts, width=np.diff(ler_bins), align='edge', 
-            color=colors.get("SpiderCSS", "C1"), edgecolor='white', label='LER Improvement')
+            color=colors[0], edgecolor='white', label='LER Improvement')
     
     ler_mean = np.mean(ler_improvements)
     max_ler_count = max(ler_counts) if len(ler_counts) > 0 else 1
-    ax1.plot([ler_mean, ler_mean], [0, max_ler_count], color='black', linestyle='--', linewidth=1.5)
+    ax1.plot([ler_mean, ler_mean], [0, max_ler_count * 1.1], color='black', linestyle='--', linewidth=1.5)
+    ax1.text(ler_mean + 1, max_ler_count * 0.9, f"Avg: {ler_mean:.1f}%", color='black', va='center')
     
     ax1.set_ylabel("Number of Codes")
-    ax1.set_xlabel(r"LER Improvement (%)")
     ax1.legend()
     
     # AR Histogram (Bottom)
-    ar_min = min(ar_improvements) if ar_improvements else -5
-    ar_max = max(ar_improvements) if ar_improvements else 5
-    ar_bins = np.linspace(ar_min, ar_max, 21)
-    
     ar_counts, _ = np.histogram(ar_improvements, bins=ar_bins)
     
     ax2.bar(ar_bins[:-1], ar_counts, width=np.diff(ar_bins), align='edge', 
-            color=colors.get("Flag at Origin", "C0"), edgecolor='white', label='AR Improvement')
+            color=colors[1], edgecolor='white', label='AR Improvement')
             
     ar_mean = np.mean(ar_improvements)
     max_ar_count = max(ar_counts) if len(ar_counts) > 0 else 1
-    ax2.plot([ar_mean, ar_mean], [0, max_ar_count], color='black', linestyle='--', linewidth=1.5)
+    ax2.plot([ar_mean, ar_mean], [0, max_ar_count * 1.1], color='black', linestyle='--', linewidth=1.5)
+    ax2.text(ar_mean + 1, max_ar_count * 0.9, f"Avg: {ar_mean:.1f}%", color='black', va='center')
     
     ax2.invert_yaxis()
     ax2.set_ylabel("Number of Codes")
-    ax2.set_xlabel(r"AR Improvement (%)")
-    from matplotlib.ticker import FormatStrFormatter
-    ax2.xaxis.set_major_formatter(FormatStrFormatter('%.1f'))
+    ax2.set_xlabel("Improvement (%)")
     ax2.legend()
     
     for ax in [ax1, ax2]:
         from matplotlib.ticker import MaxNLocator
         ax.yaxis.set_major_locator(MaxNLocator(integer=True))
+        ax.grid(True, linestyle='--', alpha=0.5)
+        # Highlight 0
+        ax.axvline(0, color='gray', linewidth=2, alpha=0.8)
     
     plt.tight_layout()
     plt.savefig(os.path.join(plots_dir, "ler_ar_mirrored_hist.png"), dpi=300)
@@ -287,7 +380,7 @@ def plot_depth_sim_qubits_scatter(codes, grouped_stats, fao_stats, colors, plots
     plt.gcf().canvas.draw()
 
     # Styled labels with badges and straight dual arrows
-    bbox_props = dict(boxstyle="round_centered,pad=0.28,y_shift=0.09", facecolor="white", edgecolor="#999999", lw=0.8, alpha=1.0)
+    bbox_props = dict(boxstyle="round_centered,pad=0.28,y_shift=0.05", facecolor="white", edgecolor="#999999", lw=0.8, alpha=1.0)
     arrow_kw = dict(arrowstyle="->", color="#333333", lw=1.1)
 
     label_configs = [
