@@ -5,6 +5,7 @@ import itertools
 import math
 
 from spidercss.utils import load_qecc_data
+from spidercss.results_parser import wilson_score_interval
 
 def get_state(code, k):
     if code in ("49_1_5", "95_1_7"):
@@ -16,14 +17,6 @@ def get_state(code, k):
 
 def format_float(val, digits=1):
     return f"{val + 1e-9:.{digits}f}"
-
-def wilson_score_interval(p, n, z=1.95996):
-    if n <= 0:
-        return p, p
-    denominator = 1 + z**2/n
-    center = p + z**2 / (2*n)
-    spread = z * math.sqrt(p*(1-p)/n + z**2 / (4*n**2))
-    return (center - spread) / denominator, (center + spread) / denominator
 
 def format_heuristic(h):
     if not h:
@@ -77,7 +70,7 @@ def main():
         # Extract FaO
         fao_r = next((r for r in group if r["method"] == "FaO"), None)
         
-        # Extract best CSSCat
+        # Extract best SpiderCSS
         css_rs = [r for r in group if r["method"].startswith("CSSCat")]
         best_css_r = None
         if css_rs:
@@ -93,7 +86,7 @@ def main():
         if best_css_r:
             m_name = best_css_r["method"]
             h_str = m_name.replace("CSSCat (", "").replace(")", "")
-            methods_to_plot.append((best_css_r, "CSSCat", h_str))
+            methods_to_plot.append((best_css_r, "SpiderCSS", h_str))
 
         num_rows = len(methods_to_plot) * 2
         if num_rows == 0:
