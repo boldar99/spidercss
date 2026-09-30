@@ -64,7 +64,6 @@ def main():
     plot_ler_vs_code(codes, best_stats, fao_stats, colors, plots_dir)
     plot_depth_sim_qubits_scatter(codes, grouped_stats, fao_stats, colors, plots_dir)
     plot_improvement_scatter_ler_ar(codes, best_stats, fao_stats, colors, plots_dir)
-    plot_improvement_scatter_depth_qubits(codes, grouped_stats, fao_stats, colors, plots_dir)
     print(f"Plots saved to {plots_dir}")
 
 def plot_independent_histograms(codes, best_stats, fao_stats, colors, plots_dir):
@@ -109,7 +108,7 @@ def plot_independent_histograms(codes, best_stats, fao_stats, colors, plots_dir)
                    color=colors[0], edgecolor='white', label='Logical Error Rate Improvement')
             
     ler_mean = np.mean(ler_improvements)
-    line1 = ax1.axvline(ler_mean, color='black', linestyle='--', linewidth=1.5, label='Average')
+    line1 = ax1.axvline(ler_mean, color='gray', linestyle='--', linewidth=1.5, label='Average')
     
     ax1.set_ylabel("Number of Codes")
     ax1.set_xlabel("Improvement to Logical Error Rate")
@@ -124,7 +123,6 @@ def plot_independent_histograms(codes, best_stats, fao_stats, colors, plots_dir)
     ax1.set_xticks(new_ticks)
     labels = [f"{t:g}%" for t in current_ticks] + [f"{ler_mean:.1f}%"]
     ax1.set_xticklabels(labels)
-    ax1.tick_params(axis='x', labelsize=10)
     
     # AR Histogram
     raw_ar_min = min(ar_improvements) if ar_improvements else 0
@@ -150,7 +148,7 @@ def plot_independent_histograms(codes, best_stats, fao_stats, colors, plots_dir)
                    color=colors[1], edgecolor='white', label='Acceptance Rate Improvement')
             
     ar_mean = np.mean(ar_improvements)
-    line2 = ax2.axvline(ar_mean, color='black', linestyle='--', linewidth=1.5, label='Average')
+    line2 = ax2.axvline(ar_mean, color='gray', linestyle='--', linewidth=1.5, label='Average')
     
     ax2.set_ylabel("Number of Codes")
     ax2.set_xlabel("Improvement to Acceptance Rate")
@@ -163,9 +161,8 @@ def plot_independent_histograms(codes, best_stats, fao_stats, colors, plots_dir)
     current_ticks = list(ax2.get_xticks())[1:-1]
     new_ticks = current_ticks + [ar_mean]
     ax2.set_xticks(new_ticks)
-    labels = [f"{t:g}%" for t in current_ticks] + [f"{ar_mean:.1f}%"]
+    labels = ["" if t == 20 else f"{t:g}%" for t in current_ticks] + [f"{ar_mean:.1f}%"]
     ax2.set_xticklabels(labels)
-    ax2.tick_params(axis='x', rotation=30., labelsize=9)
     
     for ax in [ax1, ax2]:
         from matplotlib.ticker import MaxNLocator
@@ -461,89 +458,38 @@ def plot_improvement_scatter_ler_ar(codes, best_stats, fao_stats, colors, plots_
     
     avg_ler = np.mean(ler_improvements)
     avg_ar = np.mean(ar_improvements)
+    ax = plt.gca()
+    ax.axvline(avg_ler, color='gray', linestyle='--', linewidth=1.0, alpha=0.6, zorder=1)
+    ax.axhline(avg_ar, color='gray', linestyle='--', linewidth=1.0, alpha=0.6, zorder=1)
     avg_dot = plt.scatter([avg_ler], [avg_ar], color='black', marker='*', s=200, edgecolors='white', zorder=5, label='Average Change')
     base_dot = plt.scatter([0], [0], color='black', marker='P', s=200, edgecolors='white', label='Flag at Origin Baseline')
     acode_dots = plt.scatter(ler_improvements, ar_improvements, color=colors["SpiderCSS"], s=60, alpha=0.7, edgecolors='white', label='Code')
 
     plt.xlim(-150, 100)
-    plt.ylim(-50, 80)
+    plt.ylim(-15, 60)
     
-    plt.xlabel("LER Improvement (%)")
-    plt.ylabel("AR Improvement (%)")
+    plt.xlabel("Improvement to Logical Error Rates")
+    plt.ylabel("Improvement to Acceptance Rate")
     plt.title("SpiderCSS vs Flag at Origin (LER & AR)")
     plt.grid(True, linestyle='--', alpha=0.3)
     plt.legend(loc='lower left', handles=[acode_dots, avg_dot, base_dot])
 
+    plt.gcf().canvas.draw()
+    
+    # current_xticks = list(ax.get_xticks())[1:-1]
+    current_xticks = sorted(list(set(list(ax.get_xticks())[1:-1] + [-125, -75, -25, 25, 75])))
+    new_xticks = current_xticks + [avg_ler]
+    ax.set_xticks(new_xticks)
+    ax.set_xticklabels(["" if t == 25 else f"{t:g}%" for t in current_xticks] + [f"{avg_ler:.1f}%"])
+    
+    current_yticks = list(ax.get_yticks())[1:-1]
+    new_yticks = current_yticks + [avg_ar]
+    ax.set_yticks(new_yticks)
+    ax.set_yticklabels(["" if t == 10 else f"{t:g}%" for t in current_yticks] + [f"{avg_ar:.1f}%"])
+    
     plt.tight_layout()
     plt.savefig(os.path.join(plots_dir, "scatter_ler_ar.png"), dpi=300)
     plt.savefig(os.path.join(plots_dir, "scatter_ler_ar.pdf"))
-    plt.close()
-
-def plot_improvement_scatter_depth_qubits(codes, grouped_stats, fao_stats, colors, plots_dir):
-    depth_improvements = []
-    qubit_improvements = []
-    
-    for code in codes:
-        fao_depth_max = fao_stats[code].get("depth_max", 0)
-        fao_sim_max = fao_stats[code].get("num_qubits_max", 0)
-        
-        fao_depth_min = fao_stats[code].get("depth_min", 0)
-        fao_sim_min = fao_stats[code].get("num_qubits_min", 0)
-        
-        css_rs = [r for r in grouped_stats[code] if r.get("method", "").startswith("SpiderCSS")]
-        if not css_rs:
-            continue
-            
-        valid_css = [r for r in css_rs if r.get("logical_error_rate") is not None]
-        best_css = min(valid_css, key=lambda x: x["logical_error_rate"]) if valid_css else css_rs[0]
-        
-        spider_depth_min = best_css.get("depth_min", -2)
-        spider_sim_min = best_css.get("num_qubits_min", 0)
-        
-        spider_depth_max = best_css.get("depth_max", -2)
-        spider_sim_max = best_css.get("num_qubits_max", 0)
-        
-        if fao_depth_min > 0 and spider_depth_min > 0 and fao_depth_max > 0 and spider_depth_max > 0:
-            imp_depth_min_opt = 100 * (fao_depth_min - spider_depth_min) / fao_depth_min
-            imp_depth_max_opt = 100 * (fao_depth_max - spider_depth_max) / fao_depth_max
-            avg_depth_imp = (imp_depth_min_opt + imp_depth_max_opt) / 2
-            
-            imp_sim_min_opt = 100 * (fao_sim_min - spider_sim_min) / fao_sim_min
-            imp_sim_max_opt = 100 * (fao_sim_max - spider_sim_max) / fao_sim_max
-            avg_sim_imp = (imp_sim_min_opt + imp_sim_max_opt) / 2
-            
-            depth_improvements.append(avg_depth_imp)
-            qubit_improvements.append(avg_sim_imp)
-            
-    if not depth_improvements:
-        return
-        
-    plt.figure(figsize=(7, 6))
-    
-    plt.axhline(0, color='gray', linestyle='--', alpha=0.5)
-    plt.axvline(0, color='gray', linestyle='--', alpha=0.5)
-    
-    # Shade top-right quadrant
-    plt.fill_between([0, 100], 0, 100, color='green', alpha=0.05, zorder=0)
-    
-    plt.scatter(depth_improvements, qubit_improvements, color=colors["SpiderCSS"], s=60, alpha=0.7, edgecolors='white', label='Code (Avg over reuse config)')
-    
-    avg_depth = np.mean(depth_improvements)
-    avg_qubit = np.mean(qubit_improvements)
-    plt.scatter([avg_depth], [avg_qubit], color='black', marker='*', s=200, edgecolors='white', zorder=5, label='Average Change')
-    
-    plt.xlim(-100, 100)
-    plt.ylim(-100, 100)
-    
-    plt.xlabel("Depth Improvement (%)")
-    plt.ylabel("Simultaneous Qubits Improvement (%)")
-    plt.title("SpiderCSS vs Flag at Origin (Depth & Sim Qubits)")
-    plt.grid(True, linestyle='--', alpha=0.3)
-    plt.legend(loc='lower left')
-    
-    plt.tight_layout()
-    plt.savefig(os.path.join(plots_dir, "scatter_depth_qubits.png"), dpi=300)
-    plt.savefig(os.path.join(plots_dir, "scatter_depth_qubits.pdf"))
     plt.close()
 
 if __name__ == "__main__":
