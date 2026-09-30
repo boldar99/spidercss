@@ -57,7 +57,7 @@ def main():
     import seaborn as sns
     palette = sns.color_palette("colorblind", n_colors=6)
     colors = {
-        "Flag at Origin": palette[2],
+        "Flag at origin": palette[2],
         "SpiderCSS": palette[3],
         "Min Reuse": palette[0],
         "Max Reuse": palette[3],
@@ -281,8 +281,8 @@ def plot_ler_vs_code(codes, best_stats, fao_stats, colors, plots_dir):
             fao_low, fao_high = 0, 0
         if fao_mid is not None:
             plt.errorbar(i - 0.1, fao_mid, yerr=[[fao_mid - fao_low], [fao_high - fao_mid]], 
-                         fmt='o', color=colors["Flag at Origin"], capsize=5, zorder=3,
-                         label="Flag at Origin" if i == 0 else "")
+                         fmt='o', color=colors["Flag at origin"], capsize=5, zorder=3,
+                         label="Flag at origin" if i == 0 else "")
 
         spider_ler = best_stats[code].get("logical_error_rate")
         if spider_ler is not None:
@@ -315,7 +315,7 @@ def plot_ler_vs_code(codes, best_stats, fao_stats, colors, plots_dir):
     plt.close()
 
 def plot_depth_sim_qubits_scatter(codes, grouped_stats, fao_stats, colors, plots_dir):
-    plt.figure(figsize=(7, 5))
+    plt.figure(figsize=(7, 6))
     import matplotlib.lines as mlines
     
     for code in codes:
@@ -346,11 +346,11 @@ def plot_depth_sim_qubits_scatter(codes, grouped_stats, fao_stats, colors, plots
         plt.plot([fao_depth_max, spider_depth_max], [fao_sim_max, spider_sim_max], color='gray', alpha=0.4, zorder=1)
         
         # Scatter min_reuse (triangles)
-        plt.scatter(fao_depth_min, fao_sim_min, color=colors["Flag at Origin"], zorder=2, s=50, marker='^', alpha=0.8)
+        plt.scatter(fao_depth_min, fao_sim_min, color=colors["Flag at origin"], zorder=2, s=50, marker='^', alpha=0.8)
         plt.scatter(spider_depth_min, spider_sim_min, color=colors["SpiderCSS"], zorder=2, s=50, marker='^', alpha=0.8)
         
         # Scatter max_reuse (squares)
-        plt.scatter(fao_depth_max, fao_sim_max, color=colors["Flag at Origin"], zorder=2, s=50, marker='s', alpha=0.8)
+        plt.scatter(fao_depth_max, fao_sim_max, color=colors["Flag at origin"], zorder=2, s=50, marker='s', alpha=0.8)
         plt.scatter(spider_depth_max, spider_sim_max, color=colors["SpiderCSS"], zorder=2, s=50, marker='s', alpha=0.8)
 
 
@@ -373,7 +373,7 @@ def plot_depth_sim_qubits_scatter(codes, grouped_stats, fao_stats, colors, plots
     plt.grid(True, which="both", ls="--", alpha=0.5)
     
     # Legend setup
-    fao_marker = mlines.Line2D([], [], color=colors["Flag at Origin"], marker='o', linestyle='None', markersize=8, label='Flag at Origin')
+    fao_marker = mlines.Line2D([], [], color=colors["Flag at origin"], marker='o', linestyle='None', markersize=8, label='Flag at origin')
     spider_marker = mlines.Line2D([], [], color=colors["SpiderCSS"], marker='o', linestyle='None', markersize=8, label='SpiderCSS')
     
     min_reuse_marker = mlines.Line2D([], [], color='gray', marker='^', linestyle='None', markersize=8, label='Min Reuse (Depth Opt.)')
@@ -436,19 +436,34 @@ def plot_depth_sim_qubits_scatter(codes, grouped_stats, fao_stats, colors, plots
 def plot_improvement_scatter_ler_ar(codes, best_stats, fao_stats, colors, plots_dir):
     ler_improvements = []
     ar_improvements = []
+    code_points = {}
     
     for code in codes:
+        css = best_stats[code]
+        if isinstance(css, list):
+            css_rs = [r for r in css if r.get("method", "").startswith("SpiderCSS")]
+            valid_css = [r for r in css_rs if r.get("logical_error_rate") is not None]
+            css = min(valid_css, key=lambda x: x["logical_error_rate"]) if valid_css else (css_rs[0] if css_rs else {})
+
         fao_ler = fao_stats[code].get("logical_error_rate")
-        spider_ler = best_stats[code].get("logical_error_rate")
+        spider_ler = css.get("logical_error_rate")
         
         fao_ar = fao_stats[code].get("acceptance_rate")
-        spider_ar = best_stats[code].get("acceptance_rate")
+        spider_ar = css.get("acceptance_rate")
         
         if spider_ler and spider_ler > 0 and fao_ler and fao_ler > 0 and spider_ar is not None and fao_ar is not None:
             ler_imp_pct = 100 * (fao_ler - spider_ler) / fao_ler
             ar_imp_pct = 100 * (spider_ar - fao_ar) / fao_ar
             ler_improvements.append(ler_imp_pct)
             ar_improvements.append(ar_imp_pct)
+            n = css.get("n", best_stats[code].get("n") if isinstance(best_stats[code], dict) else None)
+            k = css.get("k", best_stats[code].get("k") if isinstance(best_stats[code], dict) else None)
+            d = css.get("d", best_stats[code].get("d") if isinstance(best_stats[code], dict) else None)
+            code_points[code] = {
+                "label": f"[[{n}, {k}, {d}]]",
+                "ler": ler_imp_pct,
+                "ar": ar_imp_pct,
+            }
             
     if not ler_improvements:
         return
@@ -464,11 +479,35 @@ def plot_improvement_scatter_ler_ar(codes, best_stats, fao_stats, colors, plots_
     avg_ler = np.mean(ler_improvements)
     avg_ar = np.mean(ar_improvements)
     ax = plt.gca()
-    ax.axvline(avg_ler, color='gray', linestyle='--', linewidth=1.0, alpha=0.6, zorder=1)
-    ax.axhline(avg_ar, color='gray', linestyle='--', linewidth=1.0, alpha=0.6, zorder=1)
-    avg_dot = plt.scatter([avg_ler], [avg_ar], color='black', marker='*', s=200, edgecolors='white', zorder=5, label='Average Change')
-    base_dot = plt.scatter([0], [0], color='black', marker='P', s=200, edgecolors='white', label='Flag at Origin Baseline')
-    acode_dots = plt.scatter(ler_improvements, ar_improvements, color=colors["SpiderCSS"], s=60, alpha=0.7, edgecolors='white', label='Code')
+    ax.axvline(avg_ler, color=colors["SpiderCSS"], linestyle=':', linewidth=1.2, alpha=0.7, zorder=1)
+    ax.axhline(avg_ar, color=colors["SpiderCSS"], linestyle=':', linewidth=1.2, alpha=0.7, zorder=1)
+    avg_dot = plt.scatter([avg_ler], [avg_ar], color=colors["SpiderCSS"], marker='*', s=240, alpha=0.85, edgecolors='none', zorder=5, label='Average')
+    base_dot = plt.scatter([0], [0], color='black', marker='P', s=200, edgecolors='white', label='Flag at origin Baseline')
+    acode_dots = plt.scatter(ler_improvements, ar_improvements, color=colors["SpiderCSS"], s=60, alpha=0.85, edgecolors='white', label='Code')
+
+    # Label outlier and average codes
+    labeled_codes = {
+        "95_1_7": {"offset": (7, 5), "ha": "left", "va": "center"},
+        "47_1_11": {"offset": (-7, 5), "ha": "right", "va": "center"},
+        "7_1_3": {"offset": (-2, 5), "ha": "right", "va": "bottom"},
+        "49_1_5": {"offset": (-0, 6), "ha": "right", "va": "bottom"},
+        "49_1_7": {"offset": (7, 5), "ha": "left", "va": "center"},
+        # "31_1_7": {"offset": (0, 0), "ha": "center", "va": "center"},
+    }
+
+    for c, cfg in labeled_codes.items():
+        if c in code_points:
+            pt = code_points[c]
+            ax.annotate(
+                pt["label"],
+                xy=(pt["ler"], pt["ar"]),
+                xytext=cfg["offset"],
+                textcoords="offset points",
+                fontsize=9.5,
+                ha=cfg["ha"],
+                va=cfg["va"],
+                zorder=6,
+            )
 
     plt.xlim(-100, 100)
     plt.ylim(-15, 50)
@@ -480,16 +519,15 @@ def plot_improvement_scatter_ler_ar(codes, best_stats, fao_stats, colors, plots_
 
     plt.gcf().canvas.draw()
     
-    # current_xticks = list(ax.get_xticks())[1:-1]
     current_xticks = sorted(list(set(list(ax.get_xticks()))))
     new_xticks = current_xticks + [avg_ler]
     ax.set_xticks(new_xticks)
-    ax.set_xticklabels(["" if t == 25 else f"{t:g}%" for t in current_xticks] + [f"{avg_ler:.1f}%"])
+    ax.set_xticklabels(["" if abs(t - 25) < 5 or abs(t - avg_ler) < 3 else f"{t:g}%" for t in current_xticks] + [f"{avg_ler:.1f}%"])
     
     current_yticks = list(ax.get_yticks())[1:-1]
     new_yticks = current_yticks + [avg_ar]
     ax.set_yticks(new_yticks)
-    ax.set_yticklabels(["" if t == 10 else f"{t:g}%" for t in current_yticks] + [f"{avg_ar:.1f}%"])
+    ax.set_yticklabels(["" if abs(t - 10) < 3 else f"{t:g}%" for t in current_yticks] + [f"{avg_ar:.1f}%"])
     
     plt.tight_layout()
     plt.savefig(os.path.join(plots_dir, "scatter_ler_ar.png"), dpi=300)
@@ -552,7 +590,7 @@ def plot_improvement_scatter_depth_sim_qubits(codes, best_stats, fao_stats, colo
     plt.fill_between([0, 100], 0, 100, color='green', alpha=0.05, zorder=0)
 
     ax = plt.gca()
-    base_dot = plt.scatter([0], [0], color='black', marker='P', s=230, label='Flag at Origin Baseline')
+    base_dot = plt.scatter([0], [0], color='black', marker='P', s=230, label='Flag at origin Baseline')
 
     palette = sns.color_palette("colorblind", n_colors=6)
     color_min = colors.get("Min Reuse", palette[0])
@@ -581,7 +619,7 @@ def plot_improvement_scatter_depth_sim_qubits(codes, best_stats, fao_stats, colo
         plt.scatter([avg_d_max], [avg_q_max], color=color_max, marker='*', s=200, linewidths=0.8, zorder=5)
 
         avg_marker = mlines.Line2D([], [], color='black', marker='*', linestyle='None', markersize=12, label='Average')
-        base_marker = mlines.Line2D([], [], color='black', marker='P', linestyle='None', markersize=12, label='Flag at Origin Baseline')
+        base_marker = mlines.Line2D([], [], color='black', marker='P', linestyle='None', markersize=12, label='Flag at origin Baseline')
         plt.legend(loc='upper left', handles=[min_dots, max_dots, avg_marker, base_marker], fontsize=10)
         averages_x = [avg_d_min, avg_d_max]
         averages_y = [avg_q_min, avg_q_max]
