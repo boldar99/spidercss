@@ -321,7 +321,7 @@ def benchmark(code_iterator, p, num_samples, estimate_ler=True):
 
 
 def benchmark_simple_codes():
-    return benchmark(FAO_simp_QECCS(), 0.001, num_samples=lambda d: 100_000_000 if d < 6 else 100_000_000, estimate_ler=True)
+    return benchmark(FAO_simp_QECCS(), 0.001, num_samples=lambda d: 100_000_000 if d < 6 else 500_000_000, estimate_ler=True)
 
 
 def benchmark_hard_codes():

@@ -25,6 +25,12 @@ def wilson_score_interval(p, n, z=1.95996):
     spread = z * math.sqrt(p*(1-p)/n + z**2 / (4*n**2))
     return (center - spread) / denominator, (center + spread) / denominator
 
+def format_heuristic(h):
+    if not h:
+        return "$-$"
+    parts = h.split("_")
+    return " ".join(p.capitalize() for p in parts)
+
 def main():
     results_dir = "simulation_results"
     json_files = glob.glob(os.path.join(results_dir, "*.json"))
@@ -35,8 +41,6 @@ def main():
             try:
                 stats = json.load(file)
                 code_raw = stats.get("code")
-                method = stats.get("method")
-                
                 code_data = load_qecc_data(code_raw)
                 stats["n"] = code_data["n"]
                 stats["k"] = code_data["k"]
@@ -46,7 +50,6 @@ def main():
             except Exception:
                 continue
                 
-    # Sort by d then n
     data.sort(key=lambda x: (x["d"], x["n"], x.get("code", ""), x.get("method", "")))
     
     grouped_data = []
@@ -56,9 +59,9 @@ def main():
     print("\\begin{table*}[ht]")
     print("\\centering")
     print("\\scriptsize")
-    print("\\begin{tabular*}{\\textwidth}{@{\\extracolsep{\\fill}}l l c c c c c c c c}")
+    print("\\begin{tabular*}{\\textwidth}{@{\\extracolsep{\\fill}}l l l c c c c c c c}")
     print("\\toprule")
-    print("\\makecell[l]{QEC Code \\\\ \\& State} & Method & \\makecell{CNOT \\\\ Count} & \\makecell{Flag \\\\ Count} & \\makecell{Qubit Reuse \\\\ Opt.\\@ Target} & \\makecell{Sim.\\@ \\\\ Qubits} & Depth & LER & AR \\\\")
+    print("\\makecell[l]{QEC Code \\\\ \\& State} & Method & \\makecell{Routing \\\\ Heuristic} & \\makecell{CNOT \\\\ Count} & \\makecell{Flag \\\\ Count} & \\makecell{Qubit Reuse \\\\ Opt.\\@ Target} & \\makecell{Sim.\\@ \\\\ Qubits} & Depth & LER & AR \\\\")
     print("\\midrule")
     
     for code_raw, group in grouped_data:
@@ -71,23 +74,37 @@ def main():
         
         group_p_0001 = any(r.get("p") == 0.0001 for r in group)
         
-        methods_data = {}
-        for r in group:
-            methods_data[r["method"]] = r
-
-        # Output the rows (2 methods * 2 targets = 4 rows per code)
-        num_rows = len(methods_data) * 2
-        multirow_code = f"\\multirow{{{num_rows}}}{{*}}{{\\makecell[l]{{{code_state}}}}}"
+        # Extract FaO
+        fao_r = next((r for r in group if r["method"] == "FaO"), None)
         
+        # Extract best CSSCat
+        css_rs = [r for r in group if r["method"].startswith("CSSCat")]
+        best_css_r = None
+        if css_rs:
+            # Filter out None LERs if possible
+            valid_css = [r for r in css_rs if r.get("logical_error_rate") is not None]
+            if valid_css:
+                best_css_r = min(valid_css, key=lambda x: x["logical_error_rate"])
+            else:
+                best_css_r = css_rs[0]
+                
+        methods_to_plot = []
+        if fao_r: methods_to_plot.append((fao_r, "FaO", None))
+        if best_css_r:
+            m_name = best_css_r["method"]
+            h_str = m_name.replace("CSSCat (", "").replace(")", "")
+            methods_to_plot.append((best_css_r, "CSSCat", h_str))
+
+        num_rows = len(methods_to_plot) * 2
+        if num_rows == 0:
+            continue
+            
+        multirow_code = f"\\multirow{{{num_rows}}}{{*}}{{\\makecell[l]{{{code_state}}}}}"
         code_col = multirow_code
 
-        from spidercss.cat_at_origin import BENCHMARK_ROUTING_HEURISTICS
-        method_names = ["FaO"] + [f"CSSCat ({h})" for h in BENCHMARK_ROUTING_HEURISTICS]
-        for m_idx, m_name in enumerate(method_names):
-            if m_name not in methods_data:
-                continue
-            r = methods_data[m_name]
-            multirow_method = f"\\multirow{{2}}{{*}}{{{m_name}}}"
+        for m_idx, (r, display_method, routing_h) in enumerate(methods_to_plot):
+            multirow_method = f"\\multirow{{2}}{{*}}{{{display_method}}}"
+            multirow_routing = f"\\multirow{{2}}{{*}}{{{format_heuristic(routing_h)}}}"
             multirow_cx = f"\\multirow{{2}}{{*}}{{{r.get('num_cx')}}}"
             multirow_flags = f"\\multirow{{2}}{{*}}{{{r.get('num_flags')}}}"
             
@@ -95,7 +112,6 @@ def main():
             ar = r.get("acceptance_rate")
             n_samples = r.get("num_samples", 0)
             
-            # Format LER and AR
             if ler is None:
                 ler_latex = "$-$"
             else:
@@ -120,11 +136,11 @@ def main():
             multirow_ler = f"\\multirow{{2}}{{*}}{{{ler_latex}}}"
             multirow_ar = f"\\multirow{{2}}{{*}}{{{ar_latex}}}"
             
-            print(f"{code_col} & {multirow_method} & {multirow_cx} & {multirow_flags} & Sim.\\@ Qubits & {r.get('num_qubits_max')} & {r.get('depth_max')} & {multirow_ler} & {multirow_ar} \\\\")
-            print(f" & & & & Depth & {r.get('num_qubits_min')} & {r.get('depth_min')} & & \\\\")
+            print(f"{code_col} & {multirow_method} & {multirow_routing} & {multirow_cx} & {multirow_flags} & Sim.\\@ Qubits & {r.get('num_qubits_max')} & {r.get('depth_max')} & {multirow_ler} & {multirow_ar} \\\\")
+            print(f" & & & & & Depth & {r.get('num_qubits_min')} & {r.get('depth_min')} & & \\\\")
             
-            if m_idx == 0:
-                print(f"\\cmidrule{{2-9}}")
+            if m_idx < len(methods_to_plot) - 1:
+                print(f"\\cmidrule{{2-10}}")
                 
             code_col = ""
             
