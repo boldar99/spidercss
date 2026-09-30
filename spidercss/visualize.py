@@ -244,13 +244,14 @@ def plot_depth_sim_qubits_scatter(codes, grouped_stats, fao_stats, colors, plots
 
 
 
+
     plt.xscale("function", functions=(lambda x: x**0.5, lambda x: x**2))
     plt.yscale("function", functions=(lambda x: x**0.5, lambda x: x**2))
     
-    ticks = [1, 4, 9, 16, 25, 36, 49, 64, 81, 100] + [i**2 for i in range(12, 32, 2)]
+    ticks = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 200, 300, 400, 500, 600, 700, 800, 900]
     ax = plt.gca()
     ax.set_xticks(ticks)
-    ax.set_yticks(ticks)
+    ax.set_yticks([t for t in ticks if t <= 300])
     ax.set_xlim(0, 900)
     ax.set_ylim(0, 300)
     ax.tick_params(axis='x', rotation=45, labelsize=9)
