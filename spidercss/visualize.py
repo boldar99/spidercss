@@ -512,7 +512,7 @@ def plot_improvement_scatter_ler_ar(codes, best_stats, fao_stats, colors, plots_
     plt.xlim(-100, 100)
     plt.ylim(-15, 50)
     
-    plt.xlabel("Improvement to Logical Error Rates")
+    plt.xlabel("Improvement to Logical Error Rate")
     plt.ylabel("Improvement to Acceptance Rate")
     plt.grid(True, linestyle='--', alpha=0.3)
     plt.legend(loc='lower left', handles=[acode_dots, avg_dot, base_dot])

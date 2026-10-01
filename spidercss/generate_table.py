@@ -222,6 +222,13 @@ def main():
         
     print("\\bottomrule")
     print("\\end{tabular*}")
+    print("\\caption{")
+    print("\tResource overhead, logical error rate, and acceptance rate for different CSS QECCs.")
+    print("\tColumns from left to right: QEC code and state, Method (CSSCat or FaO, i.e.\\@ Flag at Origin~\\cite{forlivesi2025flag}), number of CNOT gates in the circuit, number of flag measurements, optimization target of qubit reuse strategy, maximum simultaneous number of qubits necessary, circuit depth, and finally logical error rate and acceptance rates using Wilson confidence intervals of 95\\%.")
+    print("\tThe logical error rates of some codes were not estimated (marked $-$) as the lookup table was too large to store in memory.")
+    print("\tFor largest 4 codes, values marked with $^*$ indicate simulations performed with a physical error rate of $p=0.0001$ instead of the usual $p=0.001$.")
+    print("}")
+    print("\\label{tab:sim_results}")
     print("\\end{table*}")
 
 if __name__ == "__main__":
