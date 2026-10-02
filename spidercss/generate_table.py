@@ -22,8 +22,8 @@ HEURISTIC_ABBR = {
     "active_spider_first": "Active Spider",
     "critical_path_first": "Crit. Path",
     "earliest_start_first": "Earliest Start",
-    "joint_resource": "Joint Resource",
-    "sa_sequence_distance": "SA Seq. Dist.",
+    "joint_resource": "Seq. Dist.",
+    "sa_sequence_distance": "Seq. Dist.",
     "joint_resource_earliest_start_first": "Joint Res. ESF",
 }
 

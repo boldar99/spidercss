@@ -57,15 +57,16 @@ def main():
     import seaborn as sns
     palette = sns.color_palette("colorblind", n_colors=6)
     colors = {
-        "Flag at origin": palette[2],
+        "Flag at Origin": palette[2],
         "SpiderCSS": palette[3],
-        "Min Reuse": palette[0],
-        "Max Reuse": palette[3],
+        "Depth-optimizing": palette[0],
+        "Footprint-optimizing": palette[3],
     }
 
     # plot_mirrored_histogram(codes, best_stats, fao_stats, palette, plots_dir)
     plot_independent_histograms(codes, best_stats, fao_stats, palette, plots_dir)
     plot_ler_vs_code(codes, best_stats, fao_stats, colors, plots_dir)
+    plot_ler_and_ar_vs_code(codes, best_stats, fao_stats, colors, plots_dir)
     plot_depth_sim_qubits_scatter(codes, grouped_stats, fao_stats, colors, plots_dir)
     plot_improvement_scatter_ler_ar(codes, best_stats, fao_stats, colors, plots_dir)
     plot_improvement_scatter_depth_sim_qubits(codes, best_stats, fao_stats, colors, plots_dir)
@@ -261,6 +262,95 @@ def plot_mirrored_histogram(codes, best_stats, fao_stats, colors, plots_dir):
     plt.savefig(os.path.join(plots_dir, "ler_ar_mirrored_hist.pdf"))
     plt.close()
 
+def plot_ler_and_ar_vs_code(codes, best_stats, fao_stats, colors, plots_dir):
+    filtered_codes = [
+        c for c in codes
+        if best_stats[c].get("logical_error_rate") is not None
+        and fao_stats[c].get("logical_error_rate") is not None
+        and best_stats[c].get("acceptance_rate") is not None
+        and fao_stats[c].get("acceptance_rate") is not None
+    ]
+    
+    fig, (ax_ar, ax_ler) = plt.subplots(2, 1, figsize=(7, 7.56), sharex=True, gridspec_kw={'height_ratios': [1, 1], 'hspace': 0.04})
+    x_positions = np.arange(len(filtered_codes))
+    
+    for i, code in enumerate(filtered_codes):
+        # LER
+        fao_mid = fao_stats[code].get("logical_error_rate")
+        fao_samples = fao_stats[code].get("num_samples", 0) * fao_stats[code].get("acceptance_rate", 1.0)
+        fao_low, fao_high = wilson_score_interval(fao_mid, fao_samples)
+        
+        ax_ler.errorbar(i - 0.1, fao_mid, yerr=[[fao_mid - fao_low], [fao_high - fao_mid]], 
+                     fmt='o', color=colors["Flag at Origin"], capsize=5, zorder=3)
+
+        spider_ler = best_stats[code].get("logical_error_rate")
+        spider_samples = best_stats[code].get("num_samples", 0) * best_stats[code].get("acceptance_rate", 1.0)
+        spider_low, spider_high = wilson_score_interval(spider_ler, spider_samples)
+        
+        ax_ler.errorbar(i + 0.1, spider_ler, yerr=[[spider_ler - spider_low], [spider_high - spider_ler]], 
+                     fmt='o', color=colors["SpiderCSS"], capsize=5, zorder=2)
+
+        # AR
+        fao_ar = fao_stats[code].get("acceptance_rate")
+        fao_ar_samples = fao_stats[code].get("num_samples", 0)
+        fao_ar_low, fao_ar_high = wilson_score_interval(fao_ar, fao_ar_samples)
+        
+        ax_ar.errorbar(i - 0.1, fao_ar, yerr=[[fao_ar - fao_ar_low], [fao_ar_high - fao_ar]], 
+                     fmt='o', color=colors["Flag at Origin"], capsize=5, zorder=3,
+                     label="Flag at Origin" if i == 0 else "")
+
+        spider_ar = best_stats[code].get("acceptance_rate")
+        spider_ar_samples = best_stats[code].get("num_samples", 0)
+        spider_ar_low, spider_ar_high = wilson_score_interval(spider_ar, spider_ar_samples)
+        
+        ax_ar.errorbar(i + 0.1, spider_ar, yerr=[[spider_ar - spider_ar_low], [spider_ar_high - spider_ar]], 
+                     fmt='o', color=colors["SpiderCSS"], capsize=5, zorder=2,
+                     label="SpiderCSS" if i == 0 else "")
+
+    ax_ler.set_yscale("log")
+    # ax_ar.set_yscale("log")
+    
+    labels = []
+    for code in filtered_codes:
+        n = best_stats[code].get("n")
+        k = best_stats[code].get("k")
+        d = best_stats[code].get("d")
+        labels.append(f"[[{n},{k},{d}]]")
+        
+    ax_ler.set_xticks(x_positions)
+    ax_ler.set_xticklabels(labels)
+    ax_ler.tick_params(axis='x', bottom=True, rotation=45, labelsize=12)
+    ax_ar.tick_params(axis='x', bottom=False)
+    ax_ar.tick_params(axis='x', bottom=False)
+    
+    ax_ler.set_ylabel("Logical Error Rate")
+    ax_ar.set_ylabel("Acceptance Rate")
+    
+    ax_ar.legend(loc='lower left')
+    
+    for ax in [ax_ar, ax_ler]:
+        ax.grid(True, which="both", axis="y", ls="--", alpha=0.3)
+        for i in range(len(filtered_codes) - 1):
+            ax.axvline(x=i + 0.5, color='gray', linestyle='-', alpha=0.5)
+            
+    # Set y limits for AR to be 0 to 1
+    # Actually, min/max of the data with a small padding
+    ar_min = min(fao_stats[c].get("acceptance_rate", 1) for c in filtered_codes + [c for c in filtered_codes if best_stats[c].get("acceptance_rate") is not None])
+    ar_min = min(ar_min, min(best_stats[c].get("acceptance_rate", 1) for c in filtered_codes))
+    
+    # Widen AR scale to fit 10^-2, and put 10^0 close to the top
+    ax_ar.set_ylim(0, 1.02)
+    ar_ticks = np.arange(0, 1.05, 0.1)
+    ax_ar.set_yticks(ar_ticks)
+    ax_ar.set_yticklabels([f"{t:.1f}" if i % 2 == 0 else "" for i, t in enumerate(ar_ticks)])
+    
+    ax_ler.set_xlim(-0.5, len(filtered_codes) - 0.5)
+    
+    plt.tight_layout()
+    plt.savefig(os.path.join(plots_dir, "ler_and_ar_vs_code.png"), dpi=300, bbox_inches='tight')
+    plt.savefig(os.path.join(plots_dir, "ler_and_ar_vs_code.pdf"), bbox_inches='tight')
+    plt.close()
+
 def plot_ler_vs_code(codes, best_stats, fao_stats, colors, plots_dir):
     # Only use codes that have LER numbers
     filtered_codes = [
@@ -281,8 +371,8 @@ def plot_ler_vs_code(codes, best_stats, fao_stats, colors, plots_dir):
             fao_low, fao_high = 0, 0
         if fao_mid is not None:
             plt.errorbar(i - 0.1, fao_mid, yerr=[[fao_mid - fao_low], [fao_high - fao_mid]], 
-                         fmt='o', color=colors["Flag at origin"], capsize=5, zorder=3,
-                         label="Flag at origin" if i == 0 else "")
+                         fmt='o', color=colors["Flag at Origin"], capsize=5, zorder=3,
+                         label="Flag at Origin" if i == 0 else "")
 
         spider_ler = best_stats[code].get("logical_error_rate")
         if spider_ler is not None:
@@ -302,7 +392,7 @@ def plot_ler_vs_code(codes, best_stats, fao_stats, colors, plots_dir):
         labels.append(f"[[{n},{k},{d}]]")
         
     plt.xticks(x_positions, labels)
-    plt.tick_params(axis='x', bottom=False, rotation=45, labelsize=12)
+    plt.tick_params(axis='x', bottom=True, rotation=45, labelsize=12)
     plt.ylabel("Logical Error Rate")
     plt.legend()
     plt.grid(True, which="both", axis="y", ls="--", alpha=0.3)
@@ -346,11 +436,11 @@ def plot_depth_sim_qubits_scatter(codes, grouped_stats, fao_stats, colors, plots
         plt.plot([fao_depth_max, spider_depth_max], [fao_sim_max, spider_sim_max], color='gray', alpha=0.4, zorder=1)
         
         # Scatter min_reuse (triangles)
-        plt.scatter(fao_depth_min, fao_sim_min, color=colors["Flag at origin"], zorder=2, s=50, marker='^', alpha=0.8)
+        plt.scatter(fao_depth_min, fao_sim_min, color=colors["Flag at Origin"], zorder=2, s=50, marker='^', alpha=0.8)
         plt.scatter(spider_depth_min, spider_sim_min, color=colors["SpiderCSS"], zorder=2, s=50, marker='^', alpha=0.8)
         
         # Scatter max_reuse (squares)
-        plt.scatter(fao_depth_max, fao_sim_max, color=colors["Flag at origin"], zorder=2, s=50, marker='s', alpha=0.8)
+        plt.scatter(fao_depth_max, fao_sim_max, color=colors["Flag at Origin"], zorder=2, s=50, marker='s', alpha=0.8)
         plt.scatter(spider_depth_max, spider_sim_max, color=colors["SpiderCSS"], zorder=2, s=50, marker='s', alpha=0.8)
 
 
@@ -373,11 +463,11 @@ def plot_depth_sim_qubits_scatter(codes, grouped_stats, fao_stats, colors, plots
     plt.grid(True, which="both", ls="--", alpha=0.5)
     
     # Legend setup
-    fao_marker = mlines.Line2D([], [], color=colors["Flag at origin"], marker='o', linestyle='None', markersize=8, label='Flag at origin')
+    fao_marker = mlines.Line2D([], [], color=colors["Flag at Origin"], marker='o', linestyle='None', markersize=8, label='Flag at Origin')
     spider_marker = mlines.Line2D([], [], color=colors["SpiderCSS"], marker='o', linestyle='None', markersize=8, label='SpiderCSS')
     
-    min_reuse_marker = mlines.Line2D([], [], color='gray', marker='^', linestyle='None', markersize=8, label='Min Reuse (Depth Opt.)')
-    max_reuse_marker = mlines.Line2D([], [], color='gray', marker='s', linestyle='None', markersize=8, label='Max Reuse (Sim Qubit Opt.)')
+    min_reuse_marker = mlines.Line2D([], [], color='gray', marker='^', linestyle='None', markersize=8, label='Depth-optimizing')
+    max_reuse_marker = mlines.Line2D([], [], color='gray', marker='s', linestyle='None', markersize=8, label='Footprint-optimizing')
     
     plt.legend(handles=[fao_marker, spider_marker, min_reuse_marker, max_reuse_marker], loc='lower right', framealpha=1.0, facecolor='white', edgecolor='#cccccc')
     plt.tight_layout()
@@ -482,7 +572,7 @@ def plot_improvement_scatter_ler_ar(codes, best_stats, fao_stats, colors, plots_
     ax.axvline(avg_ler, color=colors["SpiderCSS"], linestyle=':', linewidth=1.2, alpha=0.7, zorder=1)
     ax.axhline(avg_ar, color=colors["SpiderCSS"], linestyle=':', linewidth=1.2, alpha=0.7, zorder=1)
     avg_dot = plt.scatter([avg_ler], [avg_ar], color=colors["SpiderCSS"], marker='*', s=240, alpha=0.85, edgecolors='none', zorder=5, label='Average')
-    base_dot = plt.scatter([0], [0], color='black', marker='P', s=200, edgecolors='white', label='Flag at origin Baseline')
+    base_dot = plt.scatter([0], [0], color='black', marker='P', s=200, edgecolors='white', label='Flag at Origin Baseline')
     acode_dots = plt.scatter(ler_improvements, ar_improvements, color=colors["SpiderCSS"], s=60, alpha=0.85, edgecolors='white', label='Code')
 
     # Label outlier and average codes
@@ -573,6 +663,22 @@ def plot_improvement_scatter_depth_sim_qubits(codes, best_stats, fao_stats, colo
 
         if pair_min and pair_max:
             connected_pairs.append((pair_min, pair_max))
+            
+            n = css.get("n", best_stats[code].get("n") if isinstance(best_stats[code], dict) else None)
+            k = css.get("k", best_stats[code].get("k") if isinstance(best_stats[code], dict) else None)
+            d = css.get("d", best_stats[code].get("d") if isinstance(best_stats[code], dict) else None)
+            
+            # Use max reuse for labels as default or average between min and max?
+            # Let's just store max reuse for labeling
+            if not hasattr(plot_improvement_scatter_depth_sim_qubits, "code_points"):
+                plot_improvement_scatter_depth_sim_qubits.code_points = {}
+            plot_improvement_scatter_depth_sim_qubits.code_points[code] = {
+                "label": f"[[{n}, {k}, {d}]]",
+                "d_imp_min": pair_min[0],
+                "q_imp_min": pair_min[1],
+                "d_imp_max": pair_max[0],
+                "q_imp_max": pair_max[1],
+            }
 
     if reuse == "min" and not min_d_imp:
         return
@@ -590,11 +696,11 @@ def plot_improvement_scatter_depth_sim_qubits(codes, best_stats, fao_stats, colo
     plt.fill_between([0, 100], 0, 100, color='green', alpha=0.05, zorder=0)
 
     ax = plt.gca()
-    base_dot = plt.scatter([0], [0], color='black', marker='P', s=230, label='Flag at origin Baseline')
+    base_dot = plt.scatter([0], [0], color='black', marker='P', s=230, label='Flag at Origin Baseline')
 
     palette = sns.color_palette("colorblind", n_colors=6)
-    color_min = colors.get("Min Reuse", palette[0])
-    color_max = colors.get("Max Reuse", colors.get("SpiderCSS", palette[3]))
+    color_min = colors.get("Depth-optimizing", palette[0])
+    color_max = colors.get("Footprint-optimizing", colors.get("SpiderCSS", palette[3]))
     if color_min == color_max:
         color_min = palette[0]
 
@@ -602,8 +708,8 @@ def plot_improvement_scatter_depth_sim_qubits(codes, best_stats, fao_stats, colo
         # for p1, p2 in connected_pairs:
         #     plt.plot([p1[0], p2[0]], [p1[1], p2[1]], color='gray', alpha=0.3, zorder=1)
 
-        min_dots = plt.scatter(min_d_imp, min_q_imp, color=color_min, marker='^', s=60, alpha=0.85, edgecolors='white', zorder=3, label='Min Reuse')
-        max_dots = plt.scatter(max_d_imp, max_q_imp, color=color_max, marker='s', s=60, alpha=0.85, edgecolors='white', zorder=3, label='Max Reuse')
+        min_dots = plt.scatter(min_d_imp, min_q_imp, color=color_min, marker='^', s=60, alpha=0.85, edgecolors='white', zorder=3, label='Depth-optimizing')
+        max_dots = plt.scatter(max_d_imp, max_q_imp, color=color_max, marker='s', s=60, alpha=0.85, edgecolors='white', zorder=3, label='Footprint-optimizing')
 
         avg_d_min = np.mean(min_d_imp)
         avg_q_min = np.mean(min_q_imp)
@@ -619,16 +725,41 @@ def plot_improvement_scatter_depth_sim_qubits(codes, best_stats, fao_stats, colo
         plt.scatter([avg_d_max], [avg_q_max], color=color_max, marker='*', s=200, linewidths=0.8, zorder=5)
 
         avg_marker = mlines.Line2D([], [], color='black', marker='*', linestyle='None', markersize=12, label='Average')
-        base_marker = mlines.Line2D([], [], color='black', marker='P', linestyle='None', markersize=12, label='Flag at origin Baseline')
+        base_marker = mlines.Line2D([], [], color='black', marker='P', linestyle='None', markersize=12, label='Flag at Origin Baseline')
         plt.legend(loc='upper left', handles=[min_dots, max_dots, avg_marker, base_marker], fontsize=10)
         averages_x = [avg_d_min, avg_d_max]
         averages_y = [avg_q_min, avg_q_max]
+
+        # Label codes
+        if hasattr(plot_improvement_scatter_depth_sim_qubits, "code_points"):
+            labeled_codes = {
+                "95_1_7": {"offset": (7, 5), "ha": "left", "va": "center"},
+                "47_1_11": {"offset": (-7, 5), "ha": "right", "va": "center"},
+                "7_1_3": {"offset": (-2, 5), "ha": "right", "va": "bottom"},
+                "49_1_5": {"offset": (-0, 6), "ha": "right", "va": "bottom"},
+                "49_1_7": {"offset": (7, 5), "ha": "left", "va": "center"},
+            }
+            for c, cfg in labeled_codes.items():
+                if c in plot_improvement_scatter_depth_sim_qubits.code_points:
+                    pt = plot_improvement_scatter_depth_sim_qubits.code_points[c]
+                    # annotate max reuse point
+                    ax.annotate(
+                        pt["label"],
+                        xy=(pt["d_imp_max"], pt["q_imp_max"]),
+                        xytext=cfg["offset"],
+                        textcoords="offset points",
+                        fontsize=9.5,
+                        ha=cfg["ha"],
+                        va=cfg["va"],
+                        zorder=6,
+                    )
+
     else:
         chosen_color = color_min if reuse == "min" else color_max
         depth_imp = min_d_imp if reuse == "min" else max_d_imp
         sim_imp = min_q_imp if reuse == "min" else max_q_imp
         marker = '^' if reuse == "min" else 's'
-        label = 'Min Reuse (Depth Opt.)' if reuse == "min" else 'Max Reuse (Sim Qubit Opt.)'
+        label = 'Depth-optimizing' if reuse == "min" else 'Footprint-optimizing'
 
         acode_dots = plt.scatter(depth_imp, sim_imp, color=chosen_color, marker=marker, s=60, alpha=0.85, edgecolors='white', zorder=3, label=label)
 
