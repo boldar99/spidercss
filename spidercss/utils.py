@@ -1,9 +1,11 @@
 import itertools
 import json
+import math
 import os
 from collections import defaultdict
 from pathlib import Path
 
+import galois
 import numpy as np
 import stim
 
@@ -465,6 +467,38 @@ def _layer_cnot_circuit(cnots):
         next_free_layer[c] = l + 1
         next_free_layer[n] = l + 1
     return list(layers.values())
+
+
+def is_perfect_code(H: np.ndarray, d: int) -> bool:
+    """
+    Determines if a parity-check matrix H (Hx or Hz) with distance d
+    defines a classical perfect code over GF(2).
+
+    Args:
+        H: Parity-check matrix as a numpy array, list of lists, or galois.GF2 array.
+        d: Minimum distance of the code (must be an odd integer >= 1).
+
+    Returns:
+        bool: True if the code saturates the Hamming bound and has full row rank over GF(2).
+    """
+    # 1. Classical perfect codes require an odd minimum distance d = 2t + 1
+    if not isinstance(d, (int, np.integer)) or d < 1 or d % 2 == 0:
+        return False
+
+    # 2. Cast into galois.GF2 array
+    H_gf2 = galois.GF2(H)
+    m, n = H_gf2.shape
+    t = (d - 1) // 2
+
+    # 3. Sphere-packing check: sum_{j=0}^t comb(n, j) == 2^m
+    sphere_volume = sum(math.comb(n, j) for j in range(t + 1))
+    if sphere_volume != (1 << m):
+        return False
+
+    # 4. Rank check over GF(2)
+    # np.linalg.matrix_rank is overridden by `galois` to perform exact Gaussian elimination mod 2
+    rank = np.linalg.matrix_rank(H_gf2)
+    return rank == m
 
 
 

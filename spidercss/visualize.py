@@ -558,7 +558,7 @@ def plot_improvement_scatter_ler_ar(codes, best_stats, fao_stats, colors, plots_
     if not ler_improvements:
         return
         
-    plt.figure(figsize=(7, 6))
+    plt.figure(figsize=(7, 5))
     
     plt.axhline(0, color='gray', linestyle='--', alpha=0.5)
     plt.axvline(0, color='gray', linestyle='--', alpha=0.5)
@@ -687,7 +687,7 @@ def plot_improvement_scatter_depth_sim_qubits(codes, best_stats, fao_stats, colo
     if reuse == "both" and not min_d_imp and not max_d_imp:
         return
 
-    plt.figure(figsize=(7, 6))
+    plt.figure(figsize=(7, 5))
 
     plt.axhline(0, color='gray', linestyle='--', alpha=0.5)
     plt.axvline(0, color='gray', linestyle='--', alpha=0.5)
@@ -733,11 +733,11 @@ def plot_improvement_scatter_depth_sim_qubits(codes, best_stats, fao_stats, colo
         # Label codes
         if hasattr(plot_improvement_scatter_depth_sim_qubits, "code_points"):
             labeled_codes = {
-                "95_1_7": {"offset": (7, 5), "ha": "left", "va": "center"},
+                "95_1_7": {"offset": (-4, 6), "ha": "center", "va": "bottom"},
                 "47_1_11": {"offset": (-7, 5), "ha": "right", "va": "center"},
-                "7_1_3": {"offset": (-2, 5), "ha": "right", "va": "bottom"},
-                "49_1_5": {"offset": (-0, 6), "ha": "right", "va": "bottom"},
-                "49_1_7": {"offset": (7, 5), "ha": "left", "va": "center"},
+                "7_1_3": {"offset": (0, -6), "ha": "center", "va": "top"},
+                "49_1_5": {"offset": (0, 6), "ha": "center", "va": "bottom"},
+                "49_1_7": {"offset": (7, 0), "ha": "left", "va": "center"},
             }
             for c, cfg in labeled_codes.items():
                 if c in plot_improvement_scatter_depth_sim_qubits.code_points:
