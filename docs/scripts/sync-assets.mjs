@@ -57,6 +57,12 @@ function syncQeccs() {
       // Copy individual file
       fs.writeFileSync(path.join(catOutDir, file), rawContent, 'utf8');
 
+      const isSelfDual = Boolean(parsed.is_self_dual);
+      const H_x = parsed.H_x ?? parsed.H_z ?? [];
+      const H_z = parsed.H_z ?? (isSelfDual ? H_x : []);
+      const L_x = parsed.L_x ?? parsed.L_z ?? [];
+      const L_z = parsed.L_z ?? (isSelfDual ? L_x : []);
+
       const entry = {
         id: `${category}/${codeId}`,
         codeId,
@@ -66,11 +72,11 @@ function syncQeccs() {
         n: parsed.n,
         k: parsed.k,
         d: parsed.d,
-        is_self_dual: Boolean(parsed.is_self_dual),
-        H_x: parsed.H_x,
-        H_z: parsed.H_z,
-        L_x: parsed.L_x ?? [],
-        L_z: parsed.L_z ?? [],
+        is_self_dual: isSelfDual,
+        H_x,
+        H_z,
+        L_x,
+        L_z,
       };
 
       allEntries.push(entry);
