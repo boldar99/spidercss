@@ -35,44 +35,48 @@ export const TargetZxPanel: React.FC<TargetZxPanelProps> = ({
   const colStroke = basis === 'Z' ? '#b91c1c' : '#15803d';
   const colSym = basis === 'Z' ? 'X' : 'Z';
 
-  // Two diagonal lines of spiders with all boundary legs going to the right (ZX state)
+  // Two parallel diagonal lines of spiders spanning the same horizontal space,
+  // with all boundary legs going to the right (ZX state)
   const totalTracks = Math.max(2, totalQubits);
   const stepY =
-    totalTracks > 24 ? 19 : totalTracks > 16 ? 24 : totalTracks > 10 ? 30 : 35;
-  const topPad = 32;
+    totalTracks > 24 ? 19 : totalTracks > 16 ? 24 : totalTracks > 10 ? 29 : 34;
+  const topPad = 36;
   const bottomPad = 28;
-  const groupGapY = stepY * 0.55;
+  const groupGapY = Math.max(36, stepY * 1.2);
   const svgHeight = Math.max(
-    260,
+    240,
     topPad +
       bottomPad +
       Math.max(0, numRows - 1) * stepY +
       groupGapY +
       Math.max(0, numNonPivots) * stepY
   );
-  const rightBoundaryX = 330;
+  const svgWidth = 680;
+  const diagStartX = 110;
+  const diagEndX = 470;
+  const rightBoundaryX = 595;
 
   const getRowPos = (rIdx: number) => {
     const frac = numRows <= 1 ? 0.5 : rIdx / (numRows - 1);
     return {
-      x: 52 + frac * 80,
+      x: diagStartX + frac * (diagEndX - diagStartX),
       y: topPad + rIdx * stepY,
     };
   };
 
-  const colBaseY = topPad + Math.max(1, numRows) * stepY + groupGapY;
+  const colBaseY = topPad + Math.max(0, numRows - 1) * stepY + groupGapY;
   const getColPos = (npIdx: number) => {
     const frac = numNonPivots <= 1 ? 0.5 : npIdx / (numNonPivots - 1);
     return {
-      x: 185 + frac * 90,
+      x: diagStartX + frac * (diagEndX - diagStartX),
       y: colBaseY + npIdx * stepY,
     };
   };
 
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-3.5 flex flex-col h-full">
+    <div className="rounded-xl border border-slate-200 bg-white p-4 flex flex-col">
       {/* Panel Header */}
-      <div className="flex items-center justify-between gap-2 mb-2">
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
         <div>
           <span className="text-[11px] font-mono uppercase tracking-wider font-bold text-slate-500">
             Panel 1 • Edge Schedule
@@ -81,20 +85,21 @@ export const TargetZxPanel: React.FC<TargetZxPanelProps> = ({
             Target Bipartite ZX-State
           </h4>
         </div>
-        <span className="px-2 py-0.5 rounded-md font-mono text-[11px] font-semibold bg-slate-100 text-slate-800 border border-slate-200">
-          {stepIndex} / {totalSteps} edges
-        </span>
+        <div className="flex items-center gap-3">
+          <span className="text-[11px] text-slate-500 hidden sm:inline">
+            Click any <span className="font-semibold text-slate-700">dashed remaining edge</span> to schedule it next, or click an added edge to inspect that step.
+          </span>
+          <span className="px-2.5 py-0.5 rounded-md font-mono text-[11px] font-semibold bg-slate-100 text-slate-800 border border-slate-200">
+            {stepIndex} / {totalSteps} edges
+          </span>
+        </div>
       </div>
 
-      <p className="text-[11px] text-slate-500 mb-2.5">
-        Click any <span className="font-semibold text-slate-700">dashed remaining edge</span> to schedule it next, or click an added edge to inspect that step.
-      </p>
-
       {/* SVG Bipartite State Diagram */}
-      <div className="relative flex-1 flex items-center justify-center bg-slate-50/60 rounded-lg border border-slate-200/80 overflow-hidden">
+      <div className="relative bg-slate-50/60 rounded-lg border border-slate-200/80 overflow-auto max-h-[420px] custom-scrollbar">
         <svg
-          viewBox={`0 0 380 ${svgHeight}`}
-          className="w-full h-auto max-h-[430px] select-none"
+          viewBox={`0 0 ${svgWidth} ${svgHeight}`}
+          className="w-full max-w-[820px] mx-auto h-auto select-none block"
         >
           {/* Output boundary wires (all exiting to the right) */}
           {Array.from({ length: numRows }, (_, rIdx) => {

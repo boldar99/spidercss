@@ -79,9 +79,9 @@ export function addUndirectedEdge(
   if (!G.nodes.has(u)) addUndirectedNode(G, u);
   if (!G.nodes.has(v)) addUndirectedNode(G, v);
   const edgeObj: GraphEdgeData = {
+    ...data,
     source: Math.min(u, v),
     target: Math.max(u, v),
-    ...data,
   };
   G.adj.get(u)!.set(v, edgeObj);
   G.adj.get(v)!.set(u, edgeObj);
@@ -300,9 +300,9 @@ export function addDirectedEdge(
   if (!D.nodes.has(u)) addDirectedNode(D, u);
   if (!D.nodes.has(v)) addDirectedNode(D, v);
   const edgeObj: GraphEdgeData = {
+    ...data,
     source: u,
     target: v,
-    ...data,
   };
   D.outEdges.get(u)!.set(v, edgeObj);
   D.inEdges.get(v)!.set(u, edgeObj);

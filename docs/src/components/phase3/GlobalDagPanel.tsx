@@ -61,10 +61,10 @@ export const GlobalDagPanel: React.FC<GlobalDagPanelProps> = ({
     const g = new dagre.graphlib.Graph();
     g.setGraph({
       rankdir: 'TB',
-      nodesep: 20,
-      ranksep: 42,
+      nodesep: 22,
+      ranksep: 52,
       marginx: 24,
-      marginy: 24,
+      marginy: 28,
     });
     g.setDefaultEdgeLabel(() => ({}));
 
@@ -127,22 +127,22 @@ export const GlobalDagPanel: React.FC<GlobalDagPanelProps> = ({
 
     const posMap = new Map<number, { x: number; y: number }>();
     let maxX = 320;
-    let maxY = 240;
+    let maxY = 260;
 
     for (const [nodeId] of baseGlobalD.nodes.entries()) {
       const nd = g.node(String(nodeId));
       if (nd) {
         posMap.set(nodeId, { x: nd.x, y: nd.y });
         if (nd.x + 30 > maxX) maxX = nd.x + 30;
-        if (nd.y + 30 > maxY) maxY = nd.y + 30;
+        if (nd.y + 34 > maxY) maxY = nd.y + 34;
       }
     }
 
     return {
       posMap,
       edgesToRender,
-      svgWidth: Math.max(360, maxX),
-      svgHeight: Math.max(260, maxY),
+      svgWidth: Math.max(380, maxX),
+      svgHeight: Math.max(280, maxY),
     };
   }, [baseGlobalD, stepIndex, stepSnapshots]);
 
@@ -198,11 +198,12 @@ export const GlobalDagPanel: React.FC<GlobalDagPanelProps> = ({
         <code className="font-mono">P_D(u(b)) → u(a)</code>.
       </p>
 
-      {/* SVG Canvas */}
-      <div className="relative flex-1 flex items-center justify-center bg-slate-50/60 rounded-lg border border-slate-200/80 overflow-auto max-h-[440px] custom-scrollbar">
+      {/* SVG Canvas (block overflow container so top and left are never clipped) */}
+      <div className="relative flex-1 bg-slate-50/60 rounded-lg border border-slate-200/80 overflow-auto max-h-[500px] custom-scrollbar">
         <svg
           viewBox={`0 0 ${dagLayout.svgWidth} ${dagLayout.svgHeight}`}
-          className="w-full h-auto select-none"
+          style={{ minWidth: `${Math.max(420, dagLayout.svgWidth)}px` }}
+          className="w-full h-auto select-none block"
         >
           <defs>
             <marker

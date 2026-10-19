@@ -28,14 +28,15 @@ export const BipartiteZxView: React.FC<BipartiteZxViewProps> = ({
   const numNonPivots = nonPivots.length;
   const totalQubits = numRows + numNonPivots;
 
-  // Compute SVG geometry for two diagonal lines of spiders with all boundary wires exiting to the right (ZX state)
+  // Compute SVG geometry for two parallel diagonal lines of spiders spanning the same horizontal space,
+  // with all boundary wires exiting to the right (ZX state)
   const layout = useMemo(() => {
     const totalTracks = Math.max(2, totalQubits);
     const stepY =
       totalTracks > 28 ? 20 : totalTracks > 18 ? 25 : totalTracks > 10 ? 32 : 38;
     const topPadding = 46;
     const bottomPadding = 34;
-    const groupGapY = stepY * 0.55;
+    const groupGapY = Math.max(40, stepY * 1.25);
     const height = Math.max(
       290,
       topPadding +
@@ -47,25 +48,25 @@ export const BipartiteZxView: React.FC<BipartiteZxViewProps> = ({
     const width = 560;
     const rightBoundaryX = 486;
 
-    // Diagonal Line 1: Row Spiders (upper-left diagonal)
-    const rowStartX = 92;
-    const rowEndX = 205;
+    // Both diagonals span the exact same horizontal space [diagStartX, diagEndX]
+    const diagStartX = 115;
+    const diagEndX = 365;
+
+    // Diagonal Line 1: Row Spiders (upper diagonal)
     const rowPos = (rIdx: number) => {
       const frac = numRows <= 1 ? 0.5 : rIdx / (numRows - 1);
       return {
-        x: rowStartX + frac * (rowEndX - rowStartX),
+        x: diagStartX + frac * (diagEndX - diagStartX),
         y: topPadding + rIdx * stepY,
       };
     };
 
-    // Diagonal Line 2: Non-Pivot Column Spiders (lower-right diagonal)
-    const colStartX = 255;
-    const colEndX = 385;
-    const colBaseY = topPadding + Math.max(1, numRows) * stepY + groupGapY;
+    // Diagonal Line 2: Non-Pivot Column Spiders (lower diagonal, same horizontal span)
+    const colBaseY = topPadding + Math.max(0, numRows - 1) * stepY + groupGapY;
     const colPos = (npIdx: number) => {
       const frac = numNonPivots <= 1 ? 0.5 : npIdx / (numNonPivots - 1);
       return {
-        x: colStartX + frac * (colEndX - colStartX),
+        x: diagStartX + frac * (diagEndX - diagStartX),
         y: colBaseY + npIdx * stepY,
       };
     };
@@ -103,6 +104,9 @@ export const BipartiteZxView: React.FC<BipartiteZxViewProps> = ({
       width,
       height,
       rightBoundaryX,
+      colBaseY,
+      diagStartX,
+      diagEndX,
       rowPos,
       colPos,
       edges,
@@ -180,17 +184,17 @@ export const BipartiteZxView: React.FC<BipartiteZxViewProps> = ({
           >
             {/* Headers */}
             <text
-              x={145}
+              x={layout.diagStartX}
               y={22}
-              textAnchor="middle"
+              textAnchor="start"
               className="fill-slate-700 text-[11px] font-sans font-semibold"
             >
               Row {rowSym}-Spiders (deg w_j)
             </text>
             <text
-              x={320}
-              y={22}
-              textAnchor="middle"
+              x={layout.diagStartX}
+              y={layout.colBaseY - 18}
+              textAnchor="start"
               className="fill-slate-700 text-[11px] font-sans font-semibold"
             >
               Col {colSym}-Spiders (deg w_i+1)

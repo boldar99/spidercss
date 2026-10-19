@@ -448,9 +448,9 @@ export const Phase3Algorithm1: React.FC<Phase3Algorithm1Props> = ({
         )}
       </div>
 
-      {/* Synchronized 3-Panel Visualization */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-stretch">
-        <div className="lg:col-span-3">
+      {/* Synchronized 3-Panel Visualization: Panel 1 Full-Width on Top, Panels 2 & 3 Side-by-Side Below */}
+      <div className="space-y-4">
+        <div>
           <TargetZxPanel
             pipeline={pipeline}
             stepIndex={clampedStep}
@@ -463,20 +463,22 @@ export const Phase3Algorithm1: React.FC<Phase3Algorithm1Props> = ({
           />
         </div>
 
-        <div className="lg:col-span-5">
-          <GlobalGraphPanel
-            pipeline={pipeline}
-            stepIndex={clampedStep}
-            basis={basis}
-          />
-        </div>
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-stretch">
+          <div className="lg:col-span-6">
+            <GlobalGraphPanel
+              pipeline={pipeline}
+              stepIndex={clampedStep}
+              basis={basis}
+            />
+          </div>
 
-        <div className="lg:col-span-4">
-          <GlobalDagPanel
-            pipeline={pipeline}
-            stepIndex={clampedStep}
-            basis={basis}
-          />
+          <div className="lg:col-span-6">
+            <GlobalDagPanel
+              pipeline={pipeline}
+              stepIndex={clampedStep}
+              basis={basis}
+            />
+          </div>
         </div>
       </div>
     </div>

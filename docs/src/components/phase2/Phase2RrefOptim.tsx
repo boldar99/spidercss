@@ -61,22 +61,39 @@ export const Phase2RrefOptim: React.FC = () => {
     if (costHistory.length <= 1) return null;
     const w = 240;
     const h = 44;
-    const pad = 4;
+    const padX = 6;
+    const padY = 6;
     const minC = Math.min(...costHistory);
     const maxC = Math.max(...costHistory);
     const range = Math.max(1, maxC - minC);
 
-    const pts = costHistory.map((val, idx) => {
+    const coords = costHistory.map((val, idx) => {
       const x =
-        pad + (idx / Math.max(1, costHistory.length - 1)) * (w - 2 * pad);
-      const yCorrect = pad + ((maxC - val) / range) * (h - 2 * pad);
-      return `${x.toFixed(1)},${yCorrect.toFixed(1)}`;
+        padX + (idx / Math.max(1, costHistory.length - 1)) * (w - 2 * padX);
+      const y =
+        minC === maxC
+          ? h / 2
+          : padY + ((val - minC) / range) * (h - 2 * padY);
+      // Higher cost = smaller y (top), lower cost = larger y (bottom)
+      const yPlot =
+        minC === maxC
+          ? h / 2
+          : padY + ((maxC - val) / range) * (h - 2 * padY);
+      return { x, y: yPlot };
     });
+
+    const pts = coords.map((p) => `${p.x.toFixed(1)},${p.y.toFixed(1)}`);
+    const first = coords[0];
+    const last = coords[coords.length - 1];
+    const areaPoints = `${first.x.toFixed(1)},${h - 2} ${pts.join(' ')} ${last.x.toFixed(1)},${h - 2}`;
 
     return {
       w,
       h,
       polyline: pts.join(' '),
+      areaPoints,
+      first,
+      last,
       startCost: costHistory[0],
       endCost: costHistory[costHistory.length - 1],
       trialsCount: costHistory.length - 1,
@@ -126,7 +143,7 @@ export const Phase2RrefOptim: React.FC = () => {
                 type="number"
                 min={1}
                 max={10000}
-                step={50}
+                step={25}
                 value={maxBasisTries}
                 onChange={(e) => setMaxBasisTries(Number(e.target.value))}
                 className="w-20 rounded-lg border border-slate-300 bg-white px-2 py-1 font-mono text-xs font-semibold text-slate-900 focus:border-emerald-600 focus:outline-none"
@@ -147,26 +164,47 @@ export const Phase2RrefOptim: React.FC = () => {
 
             {sparkline && (
               <div
-                className="flex items-center gap-2 bg-white px-2.5 py-1 rounded-lg border border-emerald-200"
+                className="flex flex-col gap-1 bg-white px-3 py-1.5 rounded-lg border border-emerald-200 shadow-2xs"
                 title={`Monte Carlo CNOT convergence over ${sparkline.trialsCount} random RREF trials`}
               >
-                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                <div className="flex items-center gap-1.5">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                  <span className="font-mono text-[11px] font-bold text-emerald-800">
+                    {sparkline.startCost} → {sparkline.endCost} CX ({sparkline.trialsCount} trials{optimRunCount > 0 ? `, run #${optimRunCount}` : ''})
+                  </span>
+                </div>
                 <svg
-                  width={80}
-                  height={22}
+                  width={210}
+                  height={38}
                   viewBox={`0 0 ${sparkline.w} ${sparkline.h}`}
-                  className="overflow-visible"
+                  className="overflow-visible w-full"
                 >
+                  <polygon
+                    points={sparkline.areaPoints}
+                    fill="#10b981"
+                    fillOpacity={0.14}
+                  />
                   <polyline
                     fill="none"
                     stroke="#047857"
-                    strokeWidth="3"
+                    strokeWidth="2.5"
+                    strokeLinejoin="round"
+                    strokeLinecap="round"
                     points={sparkline.polyline}
                   />
+                  <circle
+                    cx={sparkline.first.x}
+                    cy={sparkline.first.y}
+                    r={3}
+                    fill="#64748b"
+                  />
+                  <circle
+                    cx={sparkline.last.x}
+                    cy={sparkline.last.y}
+                    r={3.5}
+                    fill="#047857"
+                  />
                 </svg>
-                <span className="font-mono text-[11px] font-bold text-emerald-800">
-                  {sparkline.startCost} → {sparkline.endCost} CX ({sparkline.trialsCount} trials{optimRunCount > 0 ? `, run #${optimRunCount}` : ''})
-                </span>
               </div>
             )}
           </div>

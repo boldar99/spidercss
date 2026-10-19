@@ -61,7 +61,8 @@ export const GlobalGraphPanel: React.FC<GlobalGraphPanelProps> = ({
   const colStroke = basis === 'Z' ? '#b91c1c' : '#15803d';
   const colSym = basis === 'Z' ? 'X' : 'Z';
 
-  // Compute deterministic cluster layout for Z cat states (left) and X cat states (right)
+  // Compute deterministic cluster layout for Z cat states (upper diagonal) and X cat states (lower diagonal)
+  // spanning the same horizontal space, with all physical data-qubit wires exiting to the right (state diagram)
   const layout = useMemo(() => {
     const posMap = new Map<number, NodePosition>();
     const clusterBoxes: Array<{
@@ -87,7 +88,7 @@ export const GlobalGraphPanel: React.FC<GlobalGraphPanelProps> = ({
       }
     }
 
-    // Helper to position nodes inside one CatState cluster box
+    // Helper to position nodes inside one CatState cluster box (layers always flow left-to-right toward the right state boundary)
     const placeCluster = (
       kind: 'Z' | 'X',
       compIdx: number,
@@ -107,20 +108,15 @@ export const GlobalGraphPanel: React.FC<GlobalGraphPanelProps> = ({
       const innerH = Math.max(20, boxH - 2 * padY);
 
       gens.forEach((layer, lIdx) => {
-        // Place root layers toward the outer edge and port/exit layers toward the center channel
         const fracX =
           numLayers === 1 ? 0.5 : lIdx / Math.max(1, numLayers - 1);
-        const x =
-          kind === 'Z'
-            ? boxX + padX + fracX * innerW
-            : boxX + boxW - padX - fracX * innerW;
+        const x = boxX + padX + fracX * innerW;
 
         layer.forEach((localId, nIdx) => {
           const fracY =
             layer.length === 1
               ? 0.5
               : nIdx / Math.max(1, layer.length - 1);
-          // Slight vertical stagger on single-node middle layers if cycle of 4 so edges don't colinearly overlap
           let y = boxY + padY + fracY * innerH;
           if (
             state.G.nodes.size >= 4 &&
@@ -147,72 +143,68 @@ export const GlobalGraphPanel: React.FC<GlobalGraphPanelProps> = ({
       });
     };
 
-    const clusterW = 152;
-    const zGapY = 14;
-    const xGapY = 12;
+    const clusterW = 160;
+    const diagStartX = 28;
+    const diagEndX = 280;
+    const rightBoundaryX = 485;
+    const svgWidth = 545;
+    const gapY = 12;
 
-    let zCursorY = 24;
-    const zHeights = zStates.map((st) => {
-      const nCount = st.G.nodes.size;
-      return nCount <= 2 ? 64 : nCount <= 4 ? 92 : 114;
-    });
-
+    // Diagonal 1 (Upper Band): Row Z Cat States
+    let cursorY = 20;
     zStates.forEach((st, i) => {
-      const h = zHeights[i];
+      const nCount = st.G.nodes.size;
+      const h = nCount <= 2 ? 62 : nCount <= 4 ? 86 : 108;
       const qCol = pivots[i];
+      const frac = zStates.length <= 1 ? 0.5 : i / (zStates.length - 1);
+      const boxX = diagStartX + frac * (diagEndX - diagStartX);
+
       clusterBoxes.push({
         kind: 'Z',
         index: i,
         label: `${rowSym}_${i} (q_${qCol})`,
         qubitCol: qCol,
-        x: 36,
-        y: zCursorY,
+        x: boxX,
+        y: cursorY,
         w: clusterW,
         h,
       });
-      placeCluster('Z', i, st, zNodeMapping, qCol, 36, zCursorY, clusterW, h);
-      zCursorY += h + zGapY;
+      placeCluster('Z', i, st, zNodeMapping, qCol, boxX, cursorY, clusterW, h);
+      cursorY += h + gapY;
     });
 
-    let xCursorY = 24;
-    const xHeights = xStates.map((st) => {
-      const nCount = st.G.nodes.size;
-      return nCount <= 2 ? 60 : nCount <= 4 ? 88 : 110;
-    });
+    // Gap between Upper Diagonal (Row Cat States) and Lower Diagonal (Col Cat States)
+    cursorY += 16;
 
+    // Diagonal 2 (Lower Band, same horizontal span): Non-Pivot Col X Cat States
     xStates.forEach((st, j) => {
-      const h = xHeights[j];
+      const nCount = st.G.nodes.size;
+      const h = nCount <= 2 ? 62 : nCount <= 4 ? 86 : 108;
       const qCol = nonPivots[j];
+      const frac = xStates.length <= 1 ? 0.5 : j / (xStates.length - 1);
+      const boxX = diagStartX + frac * (diagEndX - diagStartX);
+
       clusterBoxes.push({
         kind: 'X',
         index: j,
         label: `${colSym}_${j} (q_${qCol})`,
         qubitCol: qCol,
-        x: 312,
-        y: xCursorY,
+        x: boxX,
+        y: cursorY,
         w: clusterW,
         h,
       });
-      placeCluster(
-        'X',
-        j,
-        st,
-        xNodeMapping,
-        qCol,
-        312,
-        xCursorY,
-        clusterW,
-        h
-      );
-      xCursorY += h + xGapY;
+      placeCluster('X', j, st, xNodeMapping, qCol, boxX, cursorY, clusterW, h);
+      cursorY += h + gapY;
     });
 
-    const totalHeight = Math.max(280, zCursorY + 12, xCursorY + 12);
+    const totalHeight = Math.max(280, cursorY + 14);
 
     return {
       posMap,
       clusterBoxes,
-      svgWidth: 500,
+      rightBoundaryX,
+      svgWidth,
       svgHeight: totalHeight,
     };
   }, [
@@ -266,7 +258,7 @@ export const GlobalGraphPanel: React.FC<GlobalGraphPanelProps> = ({
       <div className="flex items-center justify-between gap-2 mb-2">
         <div>
           <span className="text-[11px] font-mono uppercase tracking-wider font-bold text-slate-500">
-            Panel 2 • 3-Ary Spider Network
+            Panel 2 • 3-Ary Spider State Network
           </span>
           <h4 className="text-xs sm:text-sm font-bold text-slate-900">
             Global Graph <code className="font-mono text-xs">G_global</code> &amp; Spanning Forest <code className="font-mono text-xs">F</code>
@@ -278,14 +270,14 @@ export const GlobalGraphPanel: React.FC<GlobalGraphPanelProps> = ({
       </div>
 
       <p className="text-[11px] text-slate-500 mb-2.5">
-        Each spider is unfused into a 3-ary <code className="font-mono">Cat_w^t</code> subgraph. Bold edges form spanning forest <code className="font-mono">F</code> from roots <code className="font-mono">r_k</code> (blue boxes).
+        Each spider is unfused into a 3-ary <code className="font-mono">Cat_w^t</code> subgraph with its physical output leg exiting on the right. Bold edges form spanning forest <code className="font-mono">F</code> from roots <code className="font-mono">r_k</code> (blue boxes).
       </p>
 
-      {/* SVG Canvas */}
-      <div className="relative flex-1 flex items-center justify-center bg-slate-50/60 rounded-lg border border-slate-200/80 overflow-auto max-h-[440px] custom-scrollbar">
+      {/* SVG Canvas (block overflow container so top is never clipped) */}
+      <div className="relative flex-1 bg-slate-50/60 rounded-lg border border-slate-200/80 overflow-auto max-h-[500px] custom-scrollbar">
         <svg
           viewBox={`0 0 ${layout.svgWidth} ${layout.svgHeight}`}
-          className="w-full h-auto select-none"
+          className="w-full h-auto select-none block"
         >
           {/* 1. Cat State Cluster Bounding Boxes */}
           {layout.clusterBoxes.map((box) => (
@@ -297,14 +289,14 @@ export const GlobalGraphPanel: React.FC<GlobalGraphPanelProps> = ({
                 height={box.h}
                 rx={10}
                 fill={box.kind === 'Z' ? '#f0fdf4' : '#fff1f2'}
-                fillOpacity={0.55}
+                fillOpacity={0.6}
                 stroke={box.kind === 'Z' ? '#bbf7d0' : '#fecdd3'}
                 strokeWidth={1.2}
               />
               <text
-                x={box.kind === 'Z' ? box.x + 8 : box.x + box.w - 8}
+                x={box.x + 8}
                 y={box.y + 13}
-                textAnchor={box.kind === 'Z' ? 'start' : 'end'}
+                textAnchor="start"
                 className="font-mono text-[9.5px] font-bold fill-slate-600"
               >
                 {box.label}
@@ -312,7 +304,40 @@ export const GlobalGraphPanel: React.FC<GlobalGraphPanelProps> = ({
             </g>
           ))}
 
-          {/* 2. Internal Edges of baseGlobalG (bold for Spanning Forest F, dashed for non-tree flag closure) */}
+          {/* 2. Physical Data Qubit Boundary Wires from Primary Exit Spiders (All exiting to the right as a ZX state) */}
+          {Array.from(layout.posMap.entries()).map(([gId, pos]) => {
+            if (!pos.isPrimaryExit) return null;
+
+            return (
+              <g key={`exit-${gId}`}>
+                <line
+                  x1={pos.x}
+                  y1={pos.y}
+                  x2={layout.rightBoundaryX}
+                  y2={pos.y}
+                  stroke="#334155"
+                  strokeWidth={1.8}
+                  strokeOpacity={0.8}
+                />
+                <circle
+                  cx={layout.rightBoundaryX}
+                  cy={pos.y}
+                  r={2.8}
+                  fill="#0f172a"
+                />
+                <text
+                  x={layout.rightBoundaryX + 7}
+                  y={pos.y + 3.5}
+                  textAnchor="start"
+                  className="font-mono text-[9.5px] font-semibold fill-slate-700"
+                >
+                  q_{pos.dataQubitCol}
+                </text>
+              </g>
+            );
+          })}
+
+          {/* 3. Internal Edges of baseGlobalG (bold for Spanning Forest F, dashed for non-tree flag closure) */}
           {internalEdges.map((e, idx) => {
             const p1 = layout.posMap.get(e.source);
             const p2 = layout.posMap.get(e.target);
@@ -333,14 +358,13 @@ export const GlobalGraphPanel: React.FC<GlobalGraphPanelProps> = ({
             );
           })}
 
-          {/* 3. Added External CNOT Edges up to stepIndex - 1 */}
+          {/* 4. Added External CNOT Edges up to stepIndex - 1 */}
           {stepSnapshots.slice(0, Math.max(0, stepIndex - 1)).map((snap) => {
             const pZ = layout.posMap.get(snap.zGlobalNode);
             const pX = layout.posMap.get(snap.xGlobalNode);
             if (!pZ || !pX) return null;
-            const cx1 = pZ.x + 48;
-            const cx2 = pX.x - 48;
-            const dPath = `M ${pZ.x} ${pZ.y} C ${cx1} ${pZ.y}, ${cx2} ${pX.y}, ${pX.x} ${pX.y}`;
+            const midY = (pZ.y + pX.y) / 2;
+            const dPath = `M ${pZ.x} ${pZ.y} C ${pZ.x} ${midY}, ${pX.x} ${midY}, ${pX.x} ${pX.y}`;
 
             return (
               <path
@@ -354,14 +378,13 @@ export const GlobalGraphPanel: React.FC<GlobalGraphPanelProps> = ({
             );
           })}
 
-          {/* 4. Active Step External CNOT Edge (stepIndex - 1) */}
+          {/* 5. Active Step External CNOT Edge (stepIndex - 1) */}
           {activeSnap && (() => {
             const pZ = layout.posMap.get(activeSnap.zGlobalNode);
             const pX = layout.posMap.get(activeSnap.xGlobalNode);
             if (!pZ || !pX) return null;
-            const cx1 = pZ.x + 52;
-            const cx2 = pX.x - 52;
-            const dPath = `M ${pZ.x} ${pZ.y} C ${cx1} ${pZ.y}, ${cx2} ${pX.y}, ${pX.x} ${pX.y}`;
+            const midY = (pZ.y + pX.y) / 2;
+            const dPath = `M ${pZ.x} ${pZ.y} C ${pZ.x} ${midY}, ${pX.x} ${midY}, ${pX.x} ${pX.y}`;
 
             return (
               <g key="active-cnot-edge">
@@ -382,32 +405,6 @@ export const GlobalGraphPanel: React.FC<GlobalGraphPanelProps> = ({
               </g>
             );
           })()}
-
-          {/* 5. Physical Data Qubit Boundary Wires from Primary Exit Spiders */}
-          {Array.from(layout.posMap.entries()).map(([gId, pos]) => {
-            if (!pos.isPrimaryExit) return null;
-            const isZ = pos.compKind === 'Z';
-            const xEnd = isZ ? 10 : layout.svgWidth - 10;
-
-            return (
-              <g key={`exit-${gId}`}>
-                <line
-                  x1={pos.x}
-                  y1={pos.y}
-                  x2={xEnd}
-                  y2={pos.y}
-                  stroke="#1e293b"
-                  strokeWidth={1.8}
-                />
-                <circle
-                  cx={xEnd}
-                  cy={pos.y}
-                  r={2.5}
-                  fill="#0f172a"
-                />
-              </g>
-            );
-          })}
 
           {/* 6. 3-Ary Spider Nodes & Root Highlights */}
           {Array.from(layout.posMap.entries()).map(([gId, pos]) => {

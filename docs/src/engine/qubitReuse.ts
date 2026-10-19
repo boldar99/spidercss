@@ -858,7 +858,7 @@ export function compileFromGlobalPipeline(
       baseInstructions,
       pipeline.N,
       'naive',
-      'qubits'
+      'depth'
     );
   }
   return planResourceAwareReuse(

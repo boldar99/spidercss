@@ -443,12 +443,12 @@ export const ZxRewritesView: React.FC = () => {
               const rightOutX = 478;
 
               const getRPos = (rIdx: number) => ({
-                x: 90 + (numR <= 1 ? 0.5 : rIdx / (numR - 1)) * 95,
+                x: 110 + (numR <= 1 ? 0.5 : rIdx / (numR - 1)) * 240,
                 y: topP + rIdx * stepY,
               });
               const colBaseY = topP + Math.max(1, numR) * stepY + gapY;
               const getCPos = (npIdx: number) => ({
-                x: 260 + (numC <= 1 ? 0.5 : npIdx / (numC - 1)) * 105,
+                x: 110 + (numC <= 1 ? 0.5 : npIdx / (numC - 1)) * 240,
                 y: colBaseY + npIdx * stepY,
               });
 

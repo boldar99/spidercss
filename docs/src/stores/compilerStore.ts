@@ -130,7 +130,7 @@ export const $compilerStore = atom<CompilerStoreState>({
   rrefWalkthroughStage: 4,
   rrefRowOpStepIndex: initialPhase2.rrefSnapshot.rowOpSteps.length,
   permutationSeed: 101,
-  maxBasisTries: 500,
+  maxBasisTries: 100,
   isOptimizingBasis: false,
   postPhase2Branch: 'pipeline',
   rewriteStage: 1,
