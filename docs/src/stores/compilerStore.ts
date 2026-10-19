@@ -62,7 +62,7 @@ export interface CompilerStoreState {
   alg1StepIndex: number;
 
   // Phase 4: Extraction & 3-Way Qubit Reuse
-  extractionMorphStage: 'a' | 'b' | 'c' | 'd';
+  extractionMorphStage: 'b' | 'c' | 'd';
   reuseTarget: ReuseTargetType;
 }
 
@@ -399,7 +399,7 @@ export function setAlg1StepIndex(alg1StepIndex: number): void {
 }
 
 export function setExtractionMorphStage(
-  extractionMorphStage: 'a' | 'b' | 'c' | 'd'
+  extractionMorphStage: 'b' | 'c' | 'd'
 ): void {
   const cur = $compilerStore.get();
   $compilerStore.set({ ...cur, extractionMorphStage });

@@ -3,7 +3,6 @@ import { ChevronLeft, ChevronRight, Sparkles } from 'lucide-react';
 import type { BasisType } from '../../engine/types';
 import {
   CatStateExtractor,
-  edKey,
   MEASUREMENT_GATES,
   RESET_GATES,
   TWO_QUBIT_GATES,
@@ -13,13 +12,15 @@ import {
   hasUndirectedEdge,
   topologicalGenerations,
 } from '../../engine/catState';
+import type { GlobalPipelineSetup } from '../../engine/spiderLegMatcher';
 import {
-  nodeMapKey,
-  type GlobalPipelineSetup,
-} from '../../engine/spiderLegMatcher';
+  computeGlobalTopologyLayout,
+  buildUndirectedEdgePath,
+  NODE_RADIUS,
+} from '../phase3/globalTopologyLayout';
 import { Math as KaTeXMath } from '../common/Math';
 
-export type MorphStage = 'a' | 'b' | 'c' | 'd';
+export type MorphStage = 'b' | 'c' | 'd';
 
 interface GridZxMorphCanvasProps {
   pipeline: GlobalPipelineSetup;
@@ -36,28 +37,20 @@ const STAGE_META: Array<{
   description: string;
 }> = [
   {
-    id: 'a',
-    shortTitle: '(a) Completed G_global',
-    figureLabel: 'Fig. 7(a)',
-    subtitle: '3-ary ZX graph with spanning forest F & roots r_k',
-    description:
-      'After Algorithm 1 completes, G_global is a 3-ary ZX-diagram equipped with spanning forest F (bold edges), root nodes r_k (blue boxes), and acyclic causal DAG D_global.',
-  },
-  {
     id: 'b',
     shortTitle: '(b) 2D Grid-Aligned ZX',
     figureLabel: 'Fig. 7(b)',
     subtitle: 'X = topological generation in D_global, Y = tree wire in F',
     description:
-      'Each spanning tree path in F becomes a horizontal qubit wire (data wires q_0..q_{n-1} + flag ancilla wires f_k), and each spider is placed at its causal generation X in D_global.',
+      'The completed Global Graph from Phase 3: each spider is placed at its causal topological generation in D_global on horizontal qubit swimlanes, equipped with spanning forest F (bold), roots r_k (blue boxes), and external CNOTs (blue).',
   },
   {
     id: 'c',
     shortTitle: '(c) Identity-Padded & Unfused ZX',
     figureLabel: 'Fig. 7(c)',
-    subtitle: 'Vertical Z–X CNOT columns + unfused |0⟩/|+⟩ starts & ⟨0|/⟨+| ends',
+    subtitle: 'Vertical Z–X CNOT columns + unfused degree-1 boundary spiders',
     description:
-      'Internal and external CNOT edges are aligned into vertical Z–X spider pairs, root starts unfuse into degree-1 |0⟩ (red) or |+⟩ (green) spiders, and flag ends unfuse into post-selection spiders.',
+      'Internal and external CNOT edges are aligned into vertical Z–X spider pairs on qubit tracks, root starts unfuse into degree-1 spiders, and flag ends unfuse into post-selection spiders.',
   },
   {
     id: 'd',
@@ -65,7 +58,7 @@ const STAGE_META: Array<{
     figureLabel: 'Fig. 7(d)',
     subtitle: 'Direct translation of vertical Z–X spider pairs into CX gates',
     description:
-      'Every vertical (Z-spider, X-spider) pair becomes a CNOT gate (control • on the Z-spider wire, target ⊕ on the X-spider wire), degree-1 starts become |0⟩/|+⟩ resets, and flag ends become meters.',
+      'Every vertical (Z-spider, X-spider) pair becomes a CNOT gate (control • on the Z-spider wire, target ⊕ on the X-spider wire), degree-1 starts become |0⟩ (red) / |+⟩ (green) resets, and flag ends become meters.',
   },
 ];
 
@@ -77,12 +70,6 @@ export const GridZxMorphCanvas: React.FC<GridZxMorphCanvasProps> = ({
 }) => {
   const {
     N,
-    pivots,
-    nonPivots,
-    zStates,
-    xStates,
-    zNodeMapping,
-    xNodeMapping,
     finalG,
     globalF,
     globalRoots,
@@ -91,7 +78,7 @@ export const GridZxMorphCanvas: React.FC<GridZxMorphCanvasProps> = ({
     nodeOrder,
   } = pipeline;
 
-  // Run CatStateExtractor to get exact wire assignments and column operations for stages (b), (c), (d)
+  // Run CatStateExtractor to get exact wire assignments and column operations for stages (c) and (d)
   const extractionData = useMemo(() => {
     const extractor = new CatStateExtractor();
     const rawInstructions = extractor.extract(
@@ -102,43 +89,6 @@ export const GridZxMorphCanvas: React.FC<GridZxMorphCanvasProps> = ({
       globalPrimaryPaths,
       nodeOrder
     );
-
-    // 1. Stage (a) organic cluster positions
-    const stageAPos = new Map<number, { x: number; y: number }>();
-    const placeClusterNodes = (
-      kind: 'Z' | 'X',
-      compIdx: number,
-      st: (typeof zStates)[number],
-      mapping: Map<string, number>,
-      boxX: number,
-      boxY: number,
-      boxW: number,
-      boxH: number
-    ) => {
-      const gens = topologicalGenerations(st.D);
-      const numL = Math.max(1, gens.length);
-      gens.forEach((layer, lIdx) => {
-        const fx = numL === 1 ? 0.5 : lIdx / Math.max(1, numL - 1);
-        const x =
-          kind === 'Z'
-            ? boxX + 24 + fx * (boxW - 48)
-            : boxX + boxW - 24 - fx * (boxW - 48);
-        layer.forEach((localId, nIdx) => {
-          const fy =
-            layer.length === 1 ? 0.5 : nIdx / Math.max(1, layer.length - 1);
-          let y = boxY + 18 + fy * (boxH - 36);
-          if (st.G.nodes.size >= 4 && layer.length === 1 && lIdx > 0 && lIdx < numL - 1) {
-            y += lIdx % 2 === 1 ? -11 : 11;
-          }
-          const gId = mapping.get(nodeMapKey(compIdx, localId))!;
-          stageAPos.set(gId, { x, y });
-        });
-      });
-    };
-
-    // Pack stage (a) into the same SVG coordinate space
-    const zCount = Math.max(1, zStates.length);
-    const xCount = Math.max(1, xStates.length);
 
     // Determine total wires from rawInstructions
     let maxWire = N - 1;
@@ -155,25 +105,6 @@ export const GridZxMorphCanvas: React.FC<GridZxMorphCanvasProps> = ({
       270,
       topMargin + Math.max(1, totalWires - 1) * wireSpacing + bottomMargin
     );
-
-    const zBoxH = Math.max(46, (svgHeight - 36) / zCount - 8);
-    zStates.forEach((st, i) => {
-      const by = 18 + i * (zBoxH + 8);
-      placeClusterNodes('Z', i, st, zNodeMapping, 70, by, 180, zBoxH);
-    });
-
-    const xBoxH = Math.max(42, (svgHeight - 36) / xCount - 8);
-    xStates.forEach((st, j) => {
-      const by = 18 + j * (xBoxH + 8);
-      placeClusterNodes('X', j, st, xNodeMapping, 470, by, 180, xBoxH);
-    });
-
-    // 2. Stage (b) 2D Grid positions: X = topological generation in finalD, Y = assigned wire
-    const gensD = topologicalGenerations(finalD);
-    const nodeGen = new Map<number, number>();
-    gensD.forEach((layer, gIdx) => {
-      layer.forEach((nId) => nodeGen.set(nId, gIdx));
-    });
 
     // Pack CNOT and Reset/Measurement operations into ASAP circuit columns for stages (c) and (d)
     const initBasisByWire = new Map<number, 'R' | 'RX'>();
@@ -226,7 +157,6 @@ export const GridZxMorphCanvas: React.FC<GridZxMorphCanvasProps> = ({
             const list = colOccupiedIntervals.get(col) ?? [];
             list.push([minQ, maxQ]);
             colOccupiedIntervals.set(col, list);
-            // Advance only c and t, not intermediate wires
             wireLastCol.set(c.value, col);
             wireLastCol.set(t.value, col);
           }
@@ -271,58 +201,6 @@ export const GridZxMorphCanvas: React.FC<GridZxMorphCanvasProps> = ({
       wireSpan.set(w, { startX, endX, firstCol, lastCol });
     }
 
-    // Stage (b) positions for each node in finalG
-    const stageBPos = new Map<number, { x: number; y: number; wire: number }>();
-    const numGenB = Math.max(1, gensD.length);
-    for (const [gId] of finalG.nodes.entries()) {
-      const assignedWire = extractor.nodeToQubit.get(gId) ?? 0;
-      const genIdx = nodeGen.get(gId) ?? 0;
-      const gx =
-        leftWireStart +
-        (genIdx / Math.max(1, numGenB - 1)) * (rightWireEnd - leftWireStart - 45);
-      const gy = getWireY(assignedWire);
-      stageBPos.set(gId, { x: gx, y: gy, wire: assignedWire });
-    }
-
-    // Also include virtual flag closure nodes for Stage (b) on non-tree flag edges
-    const flagClosureSegments: Array<{
-      flagWire: number;
-      u: number;
-      v: number;
-      x1: number;
-      x2: number;
-      yFlag: number;
-      yU: number;
-      yV: number;
-      spiderType: BasisType;
-    }> = [];
-
-    for (const e of getUndirectedEdges(finalG)) {
-      if (e.edge_type === 'cnot') continue;
-      if (hasUndirectedEdge(globalF, e.source, e.target)) continue;
-      const k = edKey(e.source, e.target);
-      const flagWire = extractor.edgeToFlagQubit.get(k);
-      if (flagWire !== undefined) {
-        const pu = stageBPos.get(e.source);
-        const pv = stageBPos.get(e.target);
-        if (pu && pv) {
-          const leftP = pu.x <= pv.x ? pu : pv;
-          const rightP = pu.x <= pv.x ? pv : pu;
-          flagClosureSegments.push({
-            flagWire,
-            u: e.source,
-            v: e.target,
-            x1: leftP.x,
-            x2: rightP.x,
-            yFlag: getWireY(flagWire),
-            yU: leftP.y,
-            yV: rightP.y,
-            spiderType: extractor.flagSpiderTypes.get(flagWire) ?? basis,
-          });
-        }
-      }
-    }
-
     return {
       totalWires,
       svgWidth,
@@ -331,9 +209,6 @@ export const GridZxMorphCanvas: React.FC<GridZxMorphCanvasProps> = ({
       rightWireEnd,
       getWireY,
       getColX,
-      stageAPos,
-      stageBPos,
-      flagClosureSegments,
       cnotColumns,
       initBasisByWire,
       measBasisByWire,
@@ -341,33 +216,30 @@ export const GridZxMorphCanvas: React.FC<GridZxMorphCanvasProps> = ({
     };
   }, [
     N,
-    pivots,
-    nonPivots,
-    zStates,
-    xStates,
-    zNodeMapping,
-    xNodeMapping,
     finalG,
     globalF,
     globalRoots,
     finalD,
     globalPrimaryPaths,
     nodeOrder,
-    basis,
   ]);
 
-  const rootSet = useMemo(
-    () => new Set<number>(Object.values(globalRoots)),
-    [globalRoots]
-  );
+  // Stage (b): Use completed Global Graph layout from previous Phase (Phase 3)
+  const completedGenerations = useMemo(() => {
+    const lastSnap = pipeline.stepSnapshots[pipeline.stepSnapshots.length - 1];
+    return lastSnap
+      ? lastSnap.dagGenerations
+      : topologicalGenerations(pipeline.finalD);
+  }, [pipeline]);
 
-  const rootGlobalToCol = useMemo(() => {
-    const m = new Map<number, number>();
-    for (const [colStr, gId] of Object.entries(globalRoots)) {
-      m.set(gId, Number(colStr));
-    }
-    return m;
-  }, [globalRoots]);
+  const globalLayout = useMemo(() => {
+    return computeGlobalTopologyLayout(pipeline, completedGenerations, basis);
+  }, [pipeline, completedGenerations, basis]);
+
+  const internalEdges = useMemo(
+    () => getUndirectedEdges(pipeline.baseGlobalG),
+    [pipeline.baseGlobalG]
+  );
 
   const rowFill = basis === 'Z' ? '#86efac' : '#fca5a5';
   const rowStroke = basis === 'Z' ? '#15803d' : '#b91c1c';
@@ -375,22 +247,27 @@ export const GridZxMorphCanvas: React.FC<GridZxMorphCanvasProps> = ({
   const colStroke = basis === 'Z' ? '#b91c1c' : '#15803d';
 
   const currentMeta =
-    STAGE_META.find((m) => m.id === stage) ?? STAGE_META[3];
+    STAGE_META.find((m) => m.id === stage) ?? STAGE_META[STAGE_META.length - 1];
   const stageIdx = STAGE_META.findIndex((m) => m.id === stage);
+
+  const activeSvgWidth =
+    stage === 'b' ? globalLayout.svgWidth : extractionData.svgWidth;
+  const activeSvgHeight =
+    stage === 'b' ? globalLayout.svgHeight : extractionData.svgHeight;
 
   return (
     <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-4 space-y-3.5">
-      {/* 4-Stage Morph Selector Bar */}
+      {/* 3-Stage Morph Selector Bar */}
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
         <div>
           <div className="flex items-center gap-1.5 text-xs font-semibold text-emerald-800">
             <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
             <span>
-              Interactive 4-Stage Circuit Extraction Morph (Figure 7 of Paper)
+              Interactive 3-Stage Circuit Extraction Morph (Figure 7 of Paper)
             </span>
           </div>
           <p className="text-[11px] text-slate-600 mt-0.5">
-            Step through <KaTeXMath tex="\text{(a)} \to \text{(b)} \to \text{(c)} \to \text{(d)}" /> to see how <KaTeXMath tex="(G_{\text{global}}, F, D_{\text{global}})" /> is aligned onto qubit wires and translated into CNOT gates.
+            Step through <KaTeXMath tex="\text{(b)} \to \text{(c)} \to \text{(d)}" /> to see how <KaTeXMath tex="(G_{\text{global}}, F, D_{\text{global}})" /> is aligned onto qubit wires and translated into CNOT gates.
           </p>
         </div>
 
@@ -420,8 +297,8 @@ export const GridZxMorphCanvas: React.FC<GridZxMorphCanvasProps> = ({
         </div>
       </div>
 
-      {/* 4 Stage Pill Buttons */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
+      {/* 3 Stage Pill Buttons */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
         {STAGE_META.map((item) => {
           const isActive = item.id === stage;
           return (
@@ -466,18 +343,20 @@ export const GridZxMorphCanvas: React.FC<GridZxMorphCanvasProps> = ({
           {currentMeta.description}
         </div>
         <span className="font-mono text-[11px] text-slate-500 shrink-0">
-          {N} data wires + {extractionData.totalWires - N} flag wires
+          {stage === 'b'
+            ? `${N} output qubits • ${globalLayout.numGens} generations`
+            : `${N} data wires + ${extractionData.totalWires - N} flag wires`}
         </span>
       </div>
 
       {/* SVG Canvas */}
       <div className="bg-white rounded-xl border border-slate-200 overflow-x-auto custom-scrollbar p-2">
         <svg
-          viewBox={`0 0 ${extractionData.svgWidth} ${extractionData.svgHeight}`}
+          viewBox={`0 0 ${activeSvgWidth} ${activeSvgHeight}`}
           className="w-full min-w-[640px] h-auto select-none"
         >
-          {/* Wire guide lines for Stages (b), (c), (d) */}
-          {(stage === 'b' || stage === 'c' || stage === 'd') &&
+          {/* Wire guide lines for Stages (c) and (d) */}
+          {(stage === 'c' || stage === 'd') &&
             Array.from({ length: extractionData.totalWires }, (_, w) => {
               const y = extractionData.getWireY(w);
               const isData = w < N;
@@ -513,10 +392,7 @@ export const GridZxMorphCanvas: React.FC<GridZxMorphCanvasProps> = ({
                     x2={span.endX}
                     y2={y}
                     stroke={isData ? '#0f172a' : '#475569'}
-                    strokeWidth={stage === 'b' ? 2.4 : 2}
-                    strokeDasharray={
-                      stage === 'b' && !isData ? '4,3' : undefined
-                    }
+                    strokeWidth={2}
                   />
 
                   {/* Right data boundary label */}
@@ -533,135 +409,209 @@ export const GridZxMorphCanvas: React.FC<GridZxMorphCanvasProps> = ({
               );
             })}
 
-          {/* STAGE (a) and STAGE (b): Render G_global nodes & edges at their respective coordinates */}
-          {(stage === 'a' || stage === 'b') && (
+          {/* STAGE (b): 2D Grid-Aligned ZX (Completed Global Graph from Previous Phase) */}
+          {stage === 'b' && (
             <g>
-              {/* Edges of finalG */}
-              {getUndirectedEdges(finalG).map((e, idx) => {
-                const posMap =
-                  stage === 'a'
-                    ? extractionData.stageAPos
-                    : extractionData.stageBPos;
-                const p1 = posMap.get(e.source);
-                const p2 = posMap.get(e.target);
-                if (!p1 || !p2) return null;
-
-                const inForest = hasUndirectedEdge(
-                  globalF,
-                  e.source,
-                  e.target
+              {/* 1. Horizontal Swimlane Bands for Each Cat State */}
+              {globalLayout.swimlanes.map((lane) => {
+                const isZ = lane.kind === 'Z';
+                const isGreen = (basis === 'Z' && isZ) || (basis === 'X' && !isZ);
+                return (
+                  <g key={`lane-${lane.kind}-${lane.index}-${lane.qubitCol}`}>
+                    <rect
+                      x={14}
+                      y={lane.y}
+                      width={globalLayout.svgWidth - 28}
+                      height={lane.h}
+                      rx={10}
+                      fill={isGreen ? '#f0fdf4' : '#fff1f2'}
+                      fillOpacity={0.55}
+                      stroke={isGreen ? '#bbf7d0' : '#fecdd3'}
+                      strokeWidth={1.1}
+                    />
+                    <text
+                      x={26}
+                      y={lane.y + lane.h / 2 + 4}
+                      textAnchor="start"
+                      fontSize={10.5}
+                      className={`font-mono font-bold ${
+                        isGreen ? 'fill-emerald-800' : 'fill-rose-800'
+                      }`}
+                    >
+                      {lane.label}
+                    </text>
+                  </g>
                 );
-                const isCnot = e.edge_type === 'cnot';
+              })}
+
+              {/* 2. Topological Generation Column Guides & Headers */}
+              {Array.from({ length: globalLayout.numGens }, (_, gIdx) => {
+                const gx = globalLayout.firstGenX + gIdx * globalLayout.genStepX;
+                return (
+                  <g key={`gen-col-${gIdx}`}>
+                    <line
+                      x1={gx}
+                      y1={26}
+                      x2={gx}
+                      y2={globalLayout.svgHeight - 8}
+                      stroke="#cbd5e1"
+                      strokeWidth={1}
+                      strokeDasharray="3,4"
+                      strokeOpacity={0.7}
+                    />
+                    <rect
+                      x={gx - 28}
+                      y={5}
+                      width={56}
+                      height={18}
+                      rx={5}
+                      fill="#f8fafc"
+                      stroke="#e2e8f0"
+                      strokeWidth={1}
+                    />
+                    <text
+                      x={gx}
+                      y={17.5}
+                      textAnchor="middle"
+                      fontSize={9.5}
+                      className="font-mono font-semibold fill-slate-600"
+                    >
+                      Gen {gIdx}
+                    </text>
+                  </g>
+                );
+              })}
+
+              {/* 3. Physical Data Qubit Output Wires to Right Boundary */}
+              <text
+                x={globalLayout.rightBoundaryX}
+                y={18}
+                textAnchor="middle"
+                fontSize={9.5}
+                className="fill-slate-500 font-mono font-semibold"
+              >
+                Output Qubits
+              </text>
+              <line
+                x1={globalLayout.rightBoundaryX}
+                y1={26}
+                x2={globalLayout.rightBoundaryX}
+                y2={globalLayout.svgHeight - 8}
+                stroke="#94a3b8"
+                strokeWidth={1}
+                strokeDasharray="2,3"
+              />
+
+              {Array.from(globalLayout.posMap.entries()).map(([gId, pos]) => {
+                if (!pos.isPrimaryExit) return null;
+                return (
+                  <g key={`exit-${gId}`}>
+                    <line
+                      x1={pos.x}
+                      y1={pos.y}
+                      x2={globalLayout.rightBoundaryX}
+                      y2={pos.y}
+                      stroke="#334155"
+                      strokeWidth={1.9}
+                      strokeOpacity={0.85}
+                    />
+                    <circle
+                      cx={globalLayout.rightBoundaryX}
+                      cy={pos.y}
+                      r={3.2}
+                      fill="#0f172a"
+                    />
+                    <text
+                      x={globalLayout.rightBoundaryX + 8}
+                      y={pos.y + 3.5}
+                      textAnchor="start"
+                      fontSize={10.5}
+                      className="font-mono font-bold fill-slate-800"
+                    >
+                      q_{pos.dataQubitCol}
+                    </text>
+                  </g>
+                );
+              })}
+
+              {/* 4. Internal Edges of baseGlobalG (Bold for Spanning Forest F, Dashed for cycle closures) */}
+              {internalEdges.map((e, idx) => {
+                const p1 = globalLayout.posMap.get(e.source);
+                const p2 = globalLayout.posMap.get(e.target);
+                if (!p1 || !p2) return null;
+                const inForest = hasUndirectedEdge(globalF, e.source, e.target);
+                const dPath = buildUndirectedEdgePath(p1.x, p1.y, p2.x, p2.y);
+                if (!dPath) return null;
 
                 return (
-                  <line
-                    key={`ab-edge-${idx}`}
-                    x1={p1.x}
-                    y1={p1.y}
-                    x2={p2.x}
-                    y2={p2.y}
-                    stroke={
-                      inForest
-                        ? '#0f172a'
-                        : isCnot
-                        ? '#0369a1'
-                        : '#ea580c'
-                    }
-                    strokeWidth={inForest ? 3 : 2}
-                    strokeDasharray={inForest ? undefined : isCnot ? undefined : '4,3'}
-                    className="transition-all duration-500"
+                  <path
+                    key={`int-${idx}`}
+                    d={dPath}
+                    fill="none"
+                    stroke={inForest ? '#0f172a' : '#64748b'}
+                    strokeWidth={inForest ? 3.2 : 1.9}
+                    strokeDasharray={inForest ? undefined : '4,3'}
                   />
                 );
               })}
 
-              {/* Flag closure virtual segments in Stage (b) */}
-              {stage === 'b' &&
-                extractionData.flagClosureSegments.map((seg, idx) => {
-                  const sFill =
-                    seg.spiderType === 'Z' ? '#86efac' : '#fca5a5';
-                  const sStroke =
-                    seg.spiderType === 'Z' ? '#15803d' : '#b91c1c';
-                  return (
-                    <g key={`flag-seg-${idx}`}>
-                      <line
-                        x1={seg.x1}
-                        y1={seg.yU}
-                        x2={seg.x1}
-                        y2={seg.yFlag}
-                        stroke="#ea580c"
-                        strokeWidth={2}
-                      />
-                      <line
-                        x1={seg.x1}
-                        y1={seg.yFlag}
-                        x2={seg.x2}
-                        y2={seg.yFlag}
-                        stroke="#0f172a"
-                        strokeWidth={2.5}
-                      />
-                      <line
-                        x1={seg.x2}
-                        y1={seg.yV}
-                        x2={seg.x2}
-                        y2={seg.yFlag}
-                        stroke="#ea580c"
-                        strokeWidth={2}
-                      />
-                      <circle
-                        cx={seg.x1}
-                        cy={seg.yFlag}
-                        r={8}
-                        fill={sFill}
-                        stroke={sStroke}
-                        strokeWidth={1.8}
-                      />
-                      <circle
-                        cx={seg.x2}
-                        cy={seg.yFlag}
-                        r={8}
-                        fill={sFill}
-                        stroke={sStroke}
-                        strokeWidth={1.8}
-                      />
-                    </g>
-                  );
-                })}
-
-              {/* Nodes of finalG */}
-              {Array.from(finalG.nodes.entries()).map(([gId, nData]) => {
-                const pos =
-                  stage === 'a'
-                    ? extractionData.stageAPos.get(gId)
-                    : extractionData.stageBPos.get(gId);
-                if (!pos) return null;
-
-                const isZ = nData.compKind === 'Z';
-                const fill = isZ ? rowFill : colFill;
-                const stroke = isZ ? rowStroke : colStroke;
-                const isRoot = rootSet.has(gId);
-                const rootCol = rootGlobalToCol.get(gId);
+              {/* 5. External CNOT Edges Added by Algorithm 1 */}
+              {pipeline.stepSnapshots.map((snap) => {
+                const pZ = globalLayout.posMap.get(snap.zGlobalNode);
+                const pX = globalLayout.posMap.get(snap.xGlobalNode);
+                if (!pZ || !pX) return null;
+                const dPath = buildUndirectedEdgePath(pZ.x, pZ.y, pX.x, pX.y);
+                if (!dPath) return null;
 
                 return (
-                  <g
-                    key={`ab-node-${gId}`}
-                    className="transition-all duration-500"
-                  >
-                    {isRoot && (
-                      <rect
-                        x={pos.x - 13.5}
-                        y={pos.y - 13.5}
-                        width={27}
-                        height={27}
-                        rx={5}
-                        fill="none"
-                        stroke="#2563eb"
-                        strokeWidth={2.2}
-                      />
+                  <path
+                    key={`cnot-${snap.stepIndex}`}
+                    d={dPath}
+                    fill="none"
+                    stroke="#0369a1"
+                    strokeWidth={2.4}
+                    strokeOpacity={0.85}
+                  />
+                );
+              })}
+
+              {/* 6. Spider Nodes & Root Highlights */}
+              {Array.from(globalLayout.posMap.entries()).map(([gId, pos]) => {
+                const isZ = pos.compKind === 'Z';
+                const fill = isZ ? rowFill : colFill;
+                const stroke = isZ ? rowStroke : colStroke;
+
+                return (
+                  <g key={`node-${gId}`}>
+                    {/* Root node blue square highlight */}
+                    {pos.isRoot && (
+                      <g>
+                        <rect
+                          x={pos.x - 14.5}
+                          y={pos.y - 14.5}
+                          width={29}
+                          height={29}
+                          rx={5}
+                          fill="none"
+                          stroke="#2563eb"
+                          strokeWidth={2.2}
+                        />
+                        <text
+                          x={pos.x}
+                          y={pos.y + 24}
+                          textAnchor="middle"
+                          fontSize={9}
+                          className="font-mono font-bold fill-blue-700"
+                        >
+                          r_{pos.rootTreeCol}
+                        </text>
+                      </g>
                     )}
+
                     <circle
                       cx={pos.x}
                       cy={pos.y}
-                      r={10}
+                      r={NODE_RADIUS}
                       fill={fill}
                       stroke={stroke}
                       strokeWidth={2}
@@ -670,9 +620,10 @@ export const GridZxMorphCanvas: React.FC<GridZxMorphCanvasProps> = ({
                       x={pos.x}
                       y={pos.y + 3.5}
                       textAnchor="middle"
-                      className="font-mono text-[9px] font-bold fill-slate-900"
+                      fontSize={9.5}
+                      className="font-mono font-bold fill-slate-900"
                     >
-                      {isRoot && rootCol !== undefined ? `r${rootCol}` : gId}
+                      {gId}
                     </text>
                   </g>
                 );
@@ -683,7 +634,7 @@ export const GridZxMorphCanvas: React.FC<GridZxMorphCanvasProps> = ({
           {/* STAGE (c): Identity-Padded & Unfused ZX on the 2D Grid */}
           {stage === 'c' && (
             <g>
-              {/* 1. Degree-1 Unfused Initialization Spiders at Left of Each Wire */}
+              {/* 1. Degree-1 Unfused Initialization Spiders at Left of Each Wire (No |+⟩ / |0⟩ text labels) */}
               {Array.from({ length: extractionData.totalWires }, (_, w) => {
                 const y = extractionData.getWireY(w);
                 const span = extractionData.wireSpan.get(w)!;
@@ -703,14 +654,6 @@ export const GridZxMorphCanvas: React.FC<GridZxMorphCanvasProps> = ({
                       stroke={stroke}
                       strokeWidth={2}
                     />
-                    <text
-                      x={span.startX}
-                      y={y - 11}
-                      textAnchor="middle"
-                      className="font-mono text-[8.5px] font-semibold fill-slate-600"
-                    >
-                      {isPlus ? '|+⟩' : '|0⟩'}
-                    </text>
                   </g>
                 );
               })}
@@ -753,7 +696,7 @@ export const GridZxMorphCanvas: React.FC<GridZxMorphCanvasProps> = ({
                 );
               })}
 
-              {/* 3. Degree-1 Post-Selection Spiders at Right End of Flag Wires */}
+              {/* 3. Degree-1 Post-Selection Spiders at Right End of Flag Wires (No ⟨+| / ⟨0| text labels) */}
               {Array.from({ length: extractionData.totalWires }, (_, w) => {
                 if (w < N) return null;
                 const y = extractionData.getWireY(w);
@@ -774,14 +717,6 @@ export const GridZxMorphCanvas: React.FC<GridZxMorphCanvasProps> = ({
                       stroke={stroke}
                       strokeWidth={2}
                     />
-                    <text
-                      x={span.endX}
-                      y={y - 11}
-                      textAnchor="middle"
-                      className="font-mono text-[8.5px] font-semibold fill-slate-600"
-                    >
-                      {isMx ? '⟨+|' : '⟨0|'}
-                    </text>
                   </g>
                 );
               })}
@@ -806,15 +741,17 @@ export const GridZxMorphCanvas: React.FC<GridZxMorphCanvasProps> = ({
                       width={22}
                       height={19}
                       rx={4}
-                      fill={isPlus ? '#ecfdf5' : '#f8fafc'}
-                      stroke={isPlus ? '#059669' : '#334155'}
+                      fill={isPlus ? '#ecfdf5' : '#fff1f2'}
+                      stroke={isPlus ? '#059669' : '#dc2626'}
                       strokeWidth={1.6}
                     />
                     <text
                       x={span.startX}
                       y={y + 3.5}
                       textAnchor="middle"
-                      className="font-mono text-[9.5px] font-bold fill-slate-900"
+                      className={`font-mono text-[9.5px] font-bold ${
+                        isPlus ? 'fill-emerald-950' : 'fill-rose-950'
+                      }`}
                     >
                       {isPlus ? '|+⟩' : '|0⟩'}
                     </text>
@@ -885,8 +822,8 @@ export const GridZxMorphCanvas: React.FC<GridZxMorphCanvasProps> = ({
                       width={24}
                       height={20}
                       rx={4}
-                      fill="#fffbeb"
-                      stroke="#d97706"
+                      fill={isMx ? '#ecfdf5' : '#fff1f2'}
+                      stroke={isMx ? '#059669' : '#dc2626'}
                       strokeWidth={1.6}
                     />
                     {/* Meter arc & needle */}
@@ -895,7 +832,7 @@ export const GridZxMorphCanvas: React.FC<GridZxMorphCanvasProps> = ({
                         span.endX + 7
                       } ${y + 4}`}
                       fill="none"
-                      stroke="#92400e"
+                      stroke={isMx ? '#047857' : '#991b1b'}
                       strokeWidth={1.4}
                     />
                     <line
@@ -903,14 +840,16 @@ export const GridZxMorphCanvas: React.FC<GridZxMorphCanvasProps> = ({
                       y1={y + 4}
                       x2={span.endX + 4.5}
                       y2={y - 4.5}
-                      stroke="#92400e"
+                      stroke={isMx ? '#047857' : '#991b1b'}
                       strokeWidth={1.5}
                     />
                     <text
                       x={span.endX + 7.5}
                       y={y + 8}
                       textAnchor="end"
-                      className="font-mono text-[6.5px] font-bold fill-amber-900"
+                      className={`font-mono text-[6.5px] font-bold ${
+                        isMx ? 'fill-emerald-900' : 'fill-rose-900'
+                      }`}
                     >
                       {isMx ? 'X' : 'Z'}
                     </text>
@@ -920,6 +859,89 @@ export const GridZxMorphCanvas: React.FC<GridZxMorphCanvasProps> = ({
             </g>
           )}
         </svg>
+      </div>
+
+      {/* Dynamic Legend based on active Stage */}
+      <div className="mt-2.5 flex flex-wrap items-center gap-3 text-[11px] font-mono text-slate-600">
+        {stage === 'b' ? (
+          <>
+            <span className="inline-flex items-center gap-1.5">
+              <span className="w-3.5 h-1 bg-slate-900 inline-block"></span>
+              Spanning Forest F
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <span className="w-3.5 h-0.5 border-t-2 border-dashed border-slate-500 inline-block"></span>
+              Non-Tree Closure
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <span className="w-3 h-3 rounded-xs border-2 border-blue-600 inline-block"></span>
+              Root r_k
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <span className="w-3.5 h-0.5 bg-sky-700 inline-block"></span>
+              External CNOTs
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <span className="w-3.5 h-0.5 border-t-2 border-dashed border-slate-400 inline-block"></span>
+              Output Boundary (q_0..q_{N - 1})
+            </span>
+          </>
+        ) : stage === 'c' ? (
+          <>
+            <span className="inline-flex items-center gap-1.5">
+              <span className="w-3 h-3 rounded-full bg-emerald-300 border border-emerald-700 inline-block"></span>
+              Z-Spider (Control •)
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <span className="w-3 h-3 rounded-full bg-rose-300 border border-rose-700 inline-block"></span>
+              X-Spider (Target ⊕)
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <span className="w-3.5 h-0.5 bg-slate-900 inline-block"></span>
+              Vertical CNOT Column
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <span className="w-2.5 h-2.5 rounded-full bg-slate-400 inline-block"></span>
+              Degree-1 Boundary Spider
+            </span>
+          </>
+        ) : (
+          <>
+            <span className="inline-flex items-center gap-1.5">
+              <span className="px-1.5 py-0.5 rounded text-[10px] bg-rose-50 border border-rose-600 text-rose-900 font-bold inline-block">
+                |0⟩
+              </span>
+              |0⟩ Reset (X-basis)
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <span className="px-1.5 py-0.5 rounded text-[10px] bg-emerald-50 border border-emerald-600 text-emerald-900 font-bold inline-block">
+                |+⟩
+              </span>
+              |+⟩ Reset (Z-basis)
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <span className="inline-flex items-center gap-0.5 font-bold text-slate-800">
+                <span className="w-2 h-2 rounded-full bg-slate-900"></span>—
+                <span className="w-2.5 h-2.5 rounded-full border border-slate-900 flex items-center justify-center text-[7px]">
+                  +
+                </span>
+              </span>
+              CX Gate
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <span className="px-1.5 py-0.5 rounded text-[10px] bg-emerald-50 border border-emerald-600 text-emerald-900 font-bold inline-block">
+                X
+              </span>
+              X Measurement (green)
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <span className="px-1.5 py-0.5 rounded text-[10px] bg-rose-50 border border-rose-600 text-rose-900 font-bold inline-block">
+                Z
+              </span>
+              Z / Flag Measurement (red)
+            </span>
+          </>
+        )}
       </div>
     </div>
   );

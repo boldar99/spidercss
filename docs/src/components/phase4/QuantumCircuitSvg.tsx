@@ -273,7 +273,7 @@ export const QuantumCircuitSvg: React.FC<QuantumCircuitSvgProps> = ({
     const colSpacing = totalCols <= 20 ? 34 : 32;
     const leftPad = 20;
     const rightPad = 48;
-    const topPad = 30;
+    const topPad = 22;
     const bottomPad = 24;
 
     const circuitWidth = Math.max(
@@ -505,32 +505,6 @@ export const QuantumCircuitSvg: React.FC<QuantumCircuitSvgProps> = ({
                 viewBox={`0 0 ${layout.circuitWidth} ${layout.svgHeight}`}
                 className="select-none block"
               >
-                {/* 0. Top Column Ruler (Time / Cycles) */}
-                {Array.from({ length: layout.totalCols }, (_, c) => {
-                  if (c % (layout.totalCols > 40 ? 10 : 5) !== 0) return null;
-                  const x = layout.getColX(c);
-                  return (
-                    <g key={`col-ruler-${c}`}>
-                      <line
-                        x1={x}
-                        y1={14}
-                        x2={x}
-                        y2={layout.topPad - 6}
-                        stroke="#cbd5e1"
-                        strokeWidth={1}
-                      />
-                      <text
-                        x={x}
-                        y={11}
-                        textAnchor="middle"
-                        className="font-mono text-[8.5px] font-semibold fill-slate-400"
-                      >
-                        c{c}
-                      </text>
-                    </g>
-                  );
-                })}
-
                 {/* 1. Background Wire Tracks & Highlight Hover Bands */}
                 {Array.from({ length: numQubits }, (_, q) => {
                   const y = layout.getWireY(q);
@@ -689,15 +663,17 @@ export const QuantumCircuitSvg: React.FC<QuantumCircuitSvgProps> = ({
                           width={21}
                           height={18}
                           rx={4}
-                          fill={isPlus ? '#ecfdf5' : '#ffffff'}
-                          stroke={isPlus ? '#059669' : '#334155'}
+                          fill={isPlus ? '#ecfdf5' : '#fff1f2'}
+                          stroke={isPlus ? '#059669' : '#dc2626'}
                           strokeWidth={1.6}
                         />
                         <text
                           x={x}
                           y={y + 3.5}
                           textAnchor="middle"
-                          className="font-mono text-[9px] font-bold fill-slate-900"
+                          className={`font-mono text-[9px] font-bold ${
+                            isPlus ? 'fill-emerald-950' : 'fill-rose-950'
+                          }`}
                         >
                           {isPlus ? '|+⟩' : '|0⟩'}
                         </text>
@@ -739,8 +715,8 @@ export const QuantumCircuitSvg: React.FC<QuantumCircuitSvgProps> = ({
                         width={23}
                         height={19}
                         rx={4}
-                        fill="#fffbeb"
-                        stroke="#d97706"
+                        fill={isMx ? '#ecfdf5' : '#fff1f2'}
+                        stroke={isMx ? '#059669' : '#dc2626'}
                         strokeWidth={1.6}
                       />
                       <path
@@ -748,7 +724,7 @@ export const QuantumCircuitSvg: React.FC<QuantumCircuitSvgProps> = ({
                           y + 3.5
                         }`}
                         fill="none"
-                        stroke="#92400e"
+                        stroke={isMx ? '#047857' : '#991b1b'}
                         strokeWidth={1.3}
                       />
                       <line
@@ -756,14 +732,16 @@ export const QuantumCircuitSvg: React.FC<QuantumCircuitSvgProps> = ({
                         y1={y + 3.5}
                         x2={x + 4}
                         y2={y - 4.5}
-                        stroke="#92400e"
+                        stroke={isMx ? '#047857' : '#991b1b'}
                         strokeWidth={1.4}
                       />
                       <text
                         x={x + 7}
                         y={y + 7.5}
                         textAnchor="end"
-                        className="font-mono text-[6.5px] font-bold fill-amber-900"
+                        className={`font-mono text-[6.5px] font-bold ${
+                          isMx ? 'fill-emerald-900' : 'fill-rose-900'
+                        }`}
                       >
                         {isMx ? 'X' : 'Z'}
                       </text>

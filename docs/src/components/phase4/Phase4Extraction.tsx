@@ -123,7 +123,7 @@ export const Phase4Extraction: React.FC<Phase4ExtractionProps> = ({
         </div>
       </div>
 
-      {/* 1. 4-Stage Extraction Morph Canvas (Matching Paper Figure 7) */}
+      {/* 1. 3-Stage Extraction Morph Canvas (Matching Paper Figure 7) */}
       <GridZxMorphCanvas
         pipeline={pipeline}
         basis={basis}
