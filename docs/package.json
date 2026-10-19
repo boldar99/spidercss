@@ -1,0 +1,42 @@
+{
+  "name": "spidercss-docs",
+  "type": "module",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "sync-data": "node scripts/sync-assets.mjs",
+    "predev": "npm run sync-data",
+    "dev": "astro dev",
+    "prebuild": "npm run sync-data",
+    "build": "astro build",
+    "preview": "astro preview",
+    "astro": "astro",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@astrojs/react": "^4.2.1",
+    "@dagrejs/dagre": "^1.1.4",
+    "@nanostores/react": "^0.8.0",
+    "@tailwindcss/vite": "^4.0.14",
+    "astro": "^5.5.2",
+    "clsx": "^2.1.1",
+    "d3": "^7.9.0",
+    "framer-motion": "^12.5.0",
+    "katex": "^0.16.21",
+    "lucide-react": "^0.483.0",
+    "nanostores": "^0.11.4",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "tailwind-merge": "^3.0.2",
+    "tailwindcss": "^4.0.14"
+  },
+  "devDependencies": {
+    "@types/d3": "^7.4.3",
+    "@types/katex": "^0.16.7",
+    "@types/react": "^19.0.10",
+    "@types/react-dom": "^19.0.4",
+    "typescript": "^5.8.2",
+    "vitest": "^3.0.8"
+  }
+}

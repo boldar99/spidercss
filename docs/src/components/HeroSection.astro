@@ -1,0 +1,107 @@
+---
+interface Props {
+  totalPresets: number;
+  totalCatStates: number;
+  totalBenchmarkedCodes: number;
+}
+
+const { totalPresets, totalCatStates, totalBenchmarkedCodes } = Astro.props;
+
+const authors = [
+  { name: 'Boldizsár Poór', affil: '1' },
+  { name: 'Andrey Boris Khesin', affil: '1' },
+  { name: 'Sarah Meng Li', affil: '2,3' },
+  { name: 'Benjamin Rodatz', affil: '1' },
+  { name: 'John van de Wetering', affil: '2,3' },
+  { name: 'Richie Yeung', affil: '1' },
+];
+---
+
+<section id="overview" class="relative overflow-hidden border-b border-slate-200 bg-gradient-to-b from-white via-slate-50/70 to-slate-100/60 py-12 sm:py-16">
+  <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+    <div class="max-w-4xl mx-auto text-center">
+      <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-medium mb-5">
+        <span class="w-2 h-2 rounded-full bg-emerald-600 animate-pulse"></span>
+        Interactive Research Companion & Fault-Tolerant Circuit Compiler
+      </div>
+
+      <h1 class="text-3xl sm:text-5xl font-bold tracking-tight text-slate-900 leading-tight">
+        SpiderCSS: Scalable Fault-Tolerant <span class="text-emerald-700">CSS State Preparation</span>
+      </h1>
+
+      <div class="mt-5 flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-sm sm:text-base font-medium text-slate-800">
+        {authors.map((a) => (
+          <span>
+            {a.name}<sup class="text-xs text-slate-500 ml-0.5 font-mono">{a.affil}</sup>
+          </span>
+        ))}
+      </div>
+
+      <div class="mt-2 flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-xs text-slate-500">
+        <span><sup class="font-mono">1</sup>University of Oxford</span>
+        <span><sup class="font-mono">2</sup>University of Amsterdam</span>
+        <span><sup class="font-mono">3</sup>QuSoft</span>
+      </div>
+
+      <div class="mt-7 flex flex-wrap items-center justify-center gap-3">
+        <a
+          href="#studio"
+          class="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-emerald-700 text-white text-sm font-semibold shadow-sm hover:bg-emerald-800 transition-colors"
+        >
+          Launch Interactive Studio →
+        </a>
+        <a
+          href="https://arxiv.org/abs/2610.03714"
+          target="_blank"
+          rel="noopener noreferrer"
+          class="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white border border-slate-300 text-slate-700 text-sm font-semibold hover:bg-slate-50 transition-colors"
+        >
+          Read Paper (arXiv:2610.03714)
+        </a>
+        <a
+          href="#benchmarks"
+          class="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white border border-slate-300 text-slate-700 text-sm font-semibold hover:bg-slate-50 transition-colors"
+        >
+          Explore {totalBenchmarkedCodes} Code Benchmarks
+        </a>
+      </div>
+    </div>
+
+    <!-- Abstract & Key Highlights Card -->
+    <div class="mt-10 grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
+      <div class="lg:col-span-8 rounded-2xl bg-white border border-slate-200/90 p-6 sm:p-7 shadow-2xs">
+        <h2 class="text-xs font-mono uppercase tracking-wider text-slate-400 font-semibold mb-2">
+          Abstract
+        </h2>
+        <p class="text-sm sm:text-[15px] leading-relaxed text-slate-700">
+          Fault-tolerant preparation of logical states is a critical primitive for the realization of large-scale fault-tolerant quantum computing.
+          <strong>SpiderCSS</strong> introduces a scalable compilation pipeline that generates highly optimized, fault-tolerant state preparation circuits for arbitrary Calderbank–Shor–Steane (CSS) codes.
+          Starting from an idealized bipartite ZX-diagram specification of a CSS state, we apply fault-equivalent rewrites and precomputed well-ordered <span class="font-mono text-xs bg-slate-100 px-1.5 py-0.5 rounded">Cat</span> states to construct a diagram that is CNOT-minimal both within each component and across their interconnections—provably preserving fault tolerance by construction without expensive verification.
+        </p>
+      </div>
+
+      <div class="lg:col-span-4 grid grid-cols-2 gap-3">
+        <div class="rounded-2xl bg-white border border-slate-200/90 p-4 flex flex-col justify-between shadow-2xs">
+          <span class="text-xs font-medium text-slate-500">Avg. LER Reduction</span>
+          <div class="mt-2 text-2xl sm:text-3xl font-bold text-emerald-700">−33.7%</div>
+          <span class="text-[11px] text-slate-400 mt-1">Up to −90% vs. Flag at Origin</span>
+        </div>
+        <div class="rounded-2xl bg-white border border-slate-200/90 p-4 flex flex-col justify-between shadow-2xs">
+          <span class="text-xs font-medium text-slate-500">CNOT Reduction</span>
+          <div class="mt-2 text-2xl sm:text-3xl font-bold text-slate-900">Up to 53.8%</div>
+          <span class="text-[11px] text-slate-400 mt-1">Matches or beats FaO on all codes</span>
+        </div>
+        <div class="rounded-2xl bg-white border border-slate-200/90 p-4 flex flex-col justify-between shadow-2xs">
+          <span class="text-xs font-medium text-slate-500">Preloaded QECCs</span>
+          <div class="mt-2 text-2xl sm:text-3xl font-bold text-slate-900">{totalPresets}</div>
+          <span class="text-[11px] text-slate-400 mt-1">Distances d = 2 to 15 (n ≤ 144)</span>
+        </div>
+        <div class="rounded-2xl bg-white border border-slate-200/90 p-4 flex flex-col justify-between shadow-2xs">
+          <span class="text-xs font-medium text-slate-500">Well-Ordered Cats</span>
+          <div class="mt-2 text-2xl sm:text-3xl font-bold text-slate-900">{totalCatStates}</div>
+          <span class="text-[11px] text-slate-400 mt-1">Bundled for instant client-side synthesis</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
