@@ -49,7 +49,7 @@ This is the bit about the theory, but this is not how things are implemented in 
 
 For Phase 3 we start with the initialized global data structures and find and perform Algorithm 1.
 Here, we can start with a random ordering of the edges, or one can press either of the named heuristics to get a final structure.
-I would want the diagraph and the graph displayed as they are being mutated, the "target" ZX-diagram and which of its edges have been added, and also a graph showing the backtracing.
+I would want the diagraph and the graph displayed as they are being mutated, the "target" ZX-diagram and which of its edges have been added
 
 ==================================================
 
