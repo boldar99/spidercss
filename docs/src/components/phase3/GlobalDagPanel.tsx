@@ -10,6 +10,7 @@ import type { GlobalPipelineSetup } from '../../engine/spiderLegMatcher';
 import {
   computeGlobalTopologyLayout,
   buildDirectedEdgePath,
+  NODE_RADIUS,
 } from './globalTopologyLayout';
 
 interface GlobalDagPanelProps {
@@ -31,6 +32,7 @@ export const GlobalDagPanel: React.FC<GlobalDagPanelProps> = ({
   stepIndex,
   basis,
 }) => {
+  const nodeRadius = NODE_RADIUS;
   const {
     baseGlobalD,
     globalRoots,
@@ -220,19 +222,22 @@ export const GlobalDagPanel: React.FC<GlobalDagPanelProps> = ({
         <div className="square-panel-scroll custom-scrollbar relative bg-slate-50/60 rounded-lg border border-slate-200/80">
           <svg
             viewBox={`0 0 ${dagLayout.svgWidth} ${dagLayout.svgHeight}`}
+            preserveAspectRatio="xMidYMin meet"
             style={
               zoom === null
                 ? {
                     width: '100%',
-                    minWidth: `${Math.min(680, dagLayout.svgWidth)}px`,
-                    height: `${dagLayout.svgHeight}px`,
+                    maxWidth: `${dagLayout.svgWidth}px`,
+                    height: 'auto',
+                    display: 'block',
                   }
                 : {
                     width: `${Math.round(dagLayout.svgWidth * zoom)}px`,
                     height: `${Math.round(dagLayout.svgHeight * zoom)}px`,
+                    display: 'block',
                   }
             }
-            className="select-none block"
+            className="select-none block mx-auto"
           >
             <defs>
               <marker
@@ -308,9 +313,9 @@ export const GlobalDagPanel: React.FC<GlobalDagPanelProps> = ({
                 <g key={`gen-col-${gIdx}`}>
                   <line
                     x1={gx}
-                    y1={32}
+                    y1={26}
                     x2={gx}
-                    y2={dagLayout.svgHeight - 14}
+                    y2={dagLayout.svgHeight - 8}
                     stroke="#cbd5e1"
                     strokeWidth={1}
                     strokeDasharray="3,4"
@@ -318,9 +323,9 @@ export const GlobalDagPanel: React.FC<GlobalDagPanelProps> = ({
                   />
                   <rect
                     x={gx - 28}
-                    y={8}
+                    y={5}
                     width={56}
-                    height={20}
+                    height={18}
                     rx={5}
                     fill="#f8fafc"
                     stroke="#e2e8f0"
@@ -328,9 +333,9 @@ export const GlobalDagPanel: React.FC<GlobalDagPanelProps> = ({
                   />
                   <text
                     x={gx}
-                    y={21.5}
+                    y={17.5}
                     textAnchor="middle"
-                    className="font-mono text-[10px] font-semibold fill-slate-600"
+                    className="font-mono text-[9.5px] font-semibold fill-slate-600"
                   >
                     Gen {gIdx}
                   </text>

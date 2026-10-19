@@ -51,7 +51,7 @@
 }
 
 .square-panel-scroll {
-  min-height: 420px;
+  min-height: 0;
   max-height: min(100cqw, 720px);
   overflow: auto;
 }

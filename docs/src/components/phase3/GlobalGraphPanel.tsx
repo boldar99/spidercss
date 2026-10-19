@@ -32,7 +32,7 @@ export const GlobalGraphPanel: React.FC<GlobalGraphPanelProps> = ({
     stepSnapshots,
   } = pipeline;
 
-  const [zoom, setZoom] = useState<number | null>(null);
+  const [zoom, setZoom] = useState<number | null>(1);
 
   const activeSnap =
     stepIndex > 0 && stepIndex <= stepSnapshots.length
@@ -171,16 +171,19 @@ export const GlobalGraphPanel: React.FC<GlobalGraphPanelProps> = ({
         <div className="square-panel-scroll custom-scrollbar relative bg-slate-50/60 rounded-lg border border-slate-200/80">
           <svg
             viewBox={`0 0 ${layout.svgWidth} ${layout.svgHeight}`}
+            preserveAspectRatio="xMidYMin meet"
             style={
               zoom === null
                 ? {
                     width: '100%',
-                    minWidth: `${Math.min(680, layout.svgWidth)}px`,
-                    height: `${layout.svgHeight}px`,
+                    maxWidth: `${layout.svgWidth}px`,
+                    height: 'auto',
+                    display: 'block',
                   }
                 : {
                     width: `${Math.round(layout.svgWidth * zoom)}px`,
                     height: `${Math.round(layout.svgHeight * zoom)}px`,
+                    display: 'block',
                   }
             }
             className="select-none block mx-auto"
@@ -223,9 +226,9 @@ export const GlobalGraphPanel: React.FC<GlobalGraphPanelProps> = ({
                 <g key={`gen-col-${gIdx}`}>
                   <line
                     x1={gx}
-                    y1={32}
+                    y1={26}
                     x2={gx}
-                    y2={layout.svgHeight - 14}
+                    y2={layout.svgHeight - 8}
                     stroke="#cbd5e1"
                     strokeWidth={1}
                     strokeDasharray="3,4"
@@ -233,9 +236,9 @@ export const GlobalGraphPanel: React.FC<GlobalGraphPanelProps> = ({
                   />
                   <rect
                     x={gx - 28}
-                    y={8}
+                    y={5}
                     width={56}
-                    height={20}
+                    height={18}
                     rx={5}
                     fill="#f8fafc"
                     stroke="#e2e8f0"
@@ -243,9 +246,9 @@ export const GlobalGraphPanel: React.FC<GlobalGraphPanelProps> = ({
                   />
                   <text
                     x={gx}
-                    y={21.5}
+                    y={17.5}
                     textAnchor="middle"
-                    className="font-mono text-[10px] font-semibold fill-slate-600"
+                    className="font-mono text-[9.5px] font-semibold fill-slate-600"
                   >
                     Gen {gIdx}
                   </text>
@@ -256,17 +259,17 @@ export const GlobalGraphPanel: React.FC<GlobalGraphPanelProps> = ({
             {/* 1. Physical Data Qubit Output Wires (all ports exit to the right boundary - state not map) */}
             <text
               x={layout.rightBoundaryX}
-              y={22}
+              y={18}
               textAnchor="middle"
-              className="fill-slate-500 text-[10px] font-mono font-semibold"
+              className="fill-slate-500 text-[9.5px] font-mono font-semibold"
             >
               Output Qubits
             </text>
             <line
               x1={layout.rightBoundaryX}
-              y1={32}
+              y1={26}
               x2={layout.rightBoundaryX}
-              y2={layout.svgHeight - 14}
+              y2={layout.svgHeight - 8}
               stroke="#94a3b8"
               strokeWidth={1}
               strokeDasharray="2,3"

@@ -43,6 +43,8 @@ export interface GlobalTopologyLayout {
   svgHeight: number;
 }
 
+export const NODE_RADIUS = 11.5;
+
 /**
  * Computes deterministic horizontal DAG-based coordinates for nodes in G_global and D_global.
  * - Swimlanes are ordered by qubit index (q = 0 .. N-1), not spider index.
@@ -119,10 +121,10 @@ export function computeGlobalTopologyLayout(
   const firstGenX = 142;
   const genStepX = 96;
   const rowStepY = 46;
-  const bandPadTop = 26;
-  const bandPadBottom = 26;
-  const bandGapY = 12;
-  const topHeaderH = 44;
+  const bandPadTop = 18;
+  const bandPadBottom = 18;
+  const bandGapY = 8;
+  const topHeaderH = 34;
 
   const yTrackOfNode = new Map<number, number>();
   const swimlanes: GlobalSwimlane[] = [];
@@ -201,9 +203,10 @@ export function computeGlobalTopologyLayout(
 
   const numGens = Math.max(1, activeGenerations.length);
   const lastGenX = firstGenX + Math.max(0, numGens - 1) * genStepX;
-  const rightBoundaryX = lastGenX + 90;
-  const svgWidth = Math.max(720, rightBoundaryX + 70);
-  const svgHeight = Math.max(460, cursorY + 24);
+  const rightBoundaryX = lastGenX + 80;
+  const svgWidth = Math.max(680, rightBoundaryX + 65);
+  // Snug vertical fit: end just after the last swimlane (cursorY already has the bandGapY)
+  const svgHeight = cursorY + 8;
 
   return {
     posMap,
