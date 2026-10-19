@@ -195,3 +195,58 @@ export interface CompiledCircuitResult {
   lifetimes: LogicalLifetime[];
   tradeoffFrontier: ReuseTradeoffPoint[];
 }
+
+export interface SimulationRunSummary {
+  file: string;
+  code: string;
+  n: number;
+  k: number;
+  d: number;
+  label: string;
+  full_name: string;
+  target_basis: BasisType;
+  method: string;
+  heuristic: string;
+  p: number;
+  num_samples: number;
+  total_flagged: number;
+  total_discarded: number;
+  total_incorrect: number | null;
+  logical_error_rate: number | null;
+  ler_ci_low: number | null;
+  ler_ci_high: number | null;
+  acceptance_rate: number | null;
+  ar_ci_low: number | null;
+  ar_ci_high: number | null;
+  raw_acceptance_rate: number | null;
+  num_cx: number | null;
+  num_flags: number | null;
+  num_qubits_original: number | null;
+  num_qubits_max: number | null;
+  depth_max: number | null;
+  num_qubits_min: number | null;
+  depth_min: number | null;
+  circuit_hash: string | null;
+  perfect_stim?: string | null;
+}
+
+export interface SimulationCodeSummary {
+  code: string;
+  n: number;
+  k: number;
+  d: number;
+  label: string;
+  full_name: string;
+  target_basis: BasisType;
+  fao: SimulationRunSummary | null;
+  best_spidercss: SimulationRunSummary | null;
+  runs: SimulationRunSummary[];
+}
+
+export interface SimulationSummaryPayload {
+  generated_at: string;
+  total_codes: number;
+  total_runs: number;
+  codes: SimulationCodeSummary[];
+}
+

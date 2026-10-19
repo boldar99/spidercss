@@ -41,7 +41,7 @@ During planning, the user clarified four key points:
 
 ---
 
-## 3. Current Status: Milestones 1 & 2 Are Complete
+## 3. Current Status: All Milestones (1–5) Are Complete
 
 ### Milestone 1 (Completed & Verified)
 - **Project Setup (`docs/`)**:
@@ -62,7 +62,7 @@ All client-side compiler engine modules are implemented in `docs/src/engine/` an
 
 | File | Key Exported Functions / Types |
 | :--- | :--- |
-| `src/engine/types.ts` | `QeccPreset`, `CSSValidationResult`, `RrefTrialSnapshot`, `CostBreakdown`, `WellOrderedCatState`, `Algorithm1StepSnapshot`, `CompiledCircuitResult`, etc. |
+| `src/engine/types.ts` | `QeccPreset`, `CSSValidationResult`, `RrefTrialSnapshot`, `CostBreakdown`, `WellOrderedCatState`, `Algorithm1StepSnapshot`, `CompiledCircuitResult`, `SimulationRunSummary`, `SimulationCodeSummary`, `SimulationSummaryPayload`, etc. |
 | `src/engine/gf2.ts` | `rrefGF2(M, recordSteps)`, `nullSpaceGF2`, `solveLinearSystemGF2`, `SeededRng`, `cloneMatrix`, `multiplyGF2`, `transposeGF2` |
 | `src/engine/cssState.ts` | `validateCSSCode(H_x, H_z, d)`, `matricesToPauliStrings(H_x, H_z)`, `parsePauliStrings(text)`, `getActiveMatricesForBasis(H_x, H_z, basis)`, `isPerfectCode(H, d)` |
 | `src/engine/optimizeParityMatrix.ts` | `detailedCostBreakdown(M, t)`, `cnotCost(M, t)`, `ancillaCost(M, t)`, `hasUniqueOnesProperty(M)`, `findPivotsInMatrix(M)`, `performSingleRrefTrial(M, t, perm, recordSteps)`, `rowOptimizeMatrix(M, t, maxBasisTries, seed)` |
@@ -109,15 +109,12 @@ All client-side compiler engine modules are implemented in `docs/src/engine/` an
 
 ---
 
-## 4. Remaining Work: Milestone 5
-
-### Milestone 5: Phase 5 Benchmarks, Final Integration & Build Verification
-1. **Build Phase 5 Components (`docs/src/components/phase5/`)**:
-   - Powered by `src/generated/simulationSummary.json` (and on-demand `public/data/simulation_results/by_code/{code}.json`).
-   - `Phase5Benchmarks.tsx`:
-     - **Contextual Code Card**: If the currently active preset in Phase 1 has benchmark data in `simulationSummary.codes`, highlights its SpiderCSS heuristics vs. Flag at Origin (FaO) across CNOTs, Flags, Simultaneous Qubits (`num_qubits_max` / `num_qubits_min`), Depth (`depth_max` / `depth_min`), Logical Error Rate (with Wilson 95% CI), and Acceptance Rate.
-     - **Global Benchmark Explorer (`#benchmarks`)**: Interactive comparison across all 18 benchmarked codes, including SVG scatter plots of % improvement over FaO (reproducing Figure 1 of the paper: LER vs. Acceptance Rate improvement, and Depth vs. Simultaneous Qubits improvement) and a sortable master table (reproducing Table I of the paper).
-2. **Wire `StudioShell.tsx` and `Phase5Benchmarks.tsx` into `docs/src/pages/index.astro`**.
+### Milestone 5 (Completed & Verified)
+- **Phase 5 Components (`docs/src/components/phase5/`)**:
+  - `LerComparisonPlot.tsx`: Interactive SVG plots reproducing Paper Figure 1 (Percentage Improvement Scatter Plots over Flag at Origin for LER vs. Acceptance Rate and Depth vs. Simultaneous Qubits with Reuse Strategy filter) and Paper Figure 8 (Log-scale LER & Acceptance Rate with 95% Wilson CI error bars across codes, plus √-scaled Depth vs. Simultaneous Qubits spacetime trajectories).
+  - `Phase5Benchmarks.tsx`:
+    - `Phase5ContextualCard` mounted inside `StudioShell.tsx` below Phase 4: Highlights the active code's evaluated heuristics vs. Flag at Origin, 95% Wilson CIs, one-click heuristic selection for Phase 3, and on-demand inspection of the benchmarked `perfect_stim` circuit from `public/data/simulation_results/by_code/{code}.json`.
+    - `Phase5Benchmarks` mounted in `#benchmarks` of `docs/src/pages/index.astro`: Full Global Benchmark Explorer across all 18 benchmarked codes (95 simulation runs), including `LerComparisonPlot`, code family filters, reuse target view switcher, and sortable Table I (`sim_table.tex`) with one-click `Load ↑` into the compiler studio.
 
 ---
 

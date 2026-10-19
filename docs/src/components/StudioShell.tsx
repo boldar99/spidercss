@@ -11,6 +11,7 @@ import { Phase2RrefOptim } from './phase2/Phase2RrefOptim';
 import { ZxRewritesView } from './branch/ZxRewritesView';
 import { Phase3Algorithm1 } from './phase3/Phase3Algorithm1';
 import { Phase4Extraction } from './phase4/Phase4Extraction';
+import { Phase5ContextualCard } from './phase5/Phase5Benchmarks';
 
 export const StudioShell: React.FC = () => {
   const state = useStore($compilerStore);
@@ -135,6 +136,9 @@ export const StudioShell: React.FC = () => {
 
           {/* Phase 4: Circuit Extraction, 3-Way Qubit Reuse & Export */}
           <Phase4Extraction pipeline={pipelineState.pipeline} />
+
+          {/* Phase 5: Contextual Monte Carlo Simulation Benchmark Card */}
+          <Phase5ContextualCard />
         </>
       ) : (
         <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5 text-xs text-amber-900 flex items-center gap-3">
@@ -150,4 +154,5 @@ export const StudioShell: React.FC = () => {
     </div>
   );
 };
+
 

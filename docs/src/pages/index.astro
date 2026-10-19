@@ -2,6 +2,7 @@
 import Layout from '../layouts/Layout.astro';
 import HeroSection from '../components/HeroSection.astro';
 import { StudioShell } from '../components/StudioShell';
+import { Phase5Benchmarks } from '../components/phase5/Phase5Benchmarks';
 import qeccsIndex from '../generated/qeccsIndex.json';
 import catStatesBundle from '../generated/catStatesBundle.json';
 import simulationSummary from '../generated/simulationSummary.json';
@@ -23,66 +24,7 @@ const totalBenchmarkedCodes = simulationSummary.total_codes;
   </section>
 
   <section id="benchmarks" class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-6">
-    <div class="rounded-2xl border border-slate-200 bg-white p-6 sm:p-8 shadow-2xs">
-      <span class="text-xs font-mono uppercase tracking-wider text-emerald-700 font-semibold">
-        Phase 5 Dataset Preview
-      </span>
-      <h2 class="text-xl font-bold text-slate-900 mt-1">
-        Synced Benchmark Summary ({simulationSummary.total_codes} Benchmarked CSS Codes)
-      </h2>
-      <div class="mt-4 overflow-x-auto custom-scrollbar">
-        <table class="w-full text-left border-collapse text-xs sm:text-sm">
-          <thead>
-            <tr class="border-b border-slate-200 text-slate-500 font-medium">
-              <th class="py-2.5 pr-4">Code</th>
-              <th class="py-2.5 px-3">State</th>
-              <th class="py-2.5 px-3">Best SpiderCSS Heuristic</th>
-              <th class="py-2.5 px-3 text-right">SpiderCSS CNOTs (FaO)</th>
-              <th class="py-2.5 px-3 text-right">SpiderCSS Flags (FaO)</th>
-              <th class="py-2.5 px-3 text-right">Min Depth (FaO)</th>
-              <th class="py-2.5 pl-3 text-right">SpiderCSS LER (FaO)</th>
-            </tr>
-          </thead>
-          <tbody class="divide-y divide-slate-100 font-mono text-xs">
-            {simulationSummary.codes.map((c) => (
-              <tr class="hover:bg-slate-50/80">
-                <td class="py-2.5 pr-4 font-sans font-semibold text-slate-900">
-                  [[{c.n}, {c.k}, {c.d}]] <span class="text-slate-500 font-normal">{c.label}</span>
-                </td>
-                <td class="py-2.5 px-3 text-slate-600">
-                  |{c.target_basis === 'X' ? '+̄' : '0̄'}⟩
-                </td>
-                <td class="py-2.5 px-3 text-emerald-700">
-                  {c.best_spidercss?.heuristic ?? '—'}
-                </td>
-                <td class="py-2.5 px-3 text-right">
-                  <span class="font-semibold text-slate-900">{c.best_spidercss?.num_cx ?? '—'}</span>
-                  <span class="text-slate-400"> ({c.fao?.num_cx ?? '—'})</span>
-                </td>
-                <td class="py-2.5 px-3 text-right">
-                  <span class="font-semibold text-slate-900">{c.best_spidercss?.num_flags ?? '—'}</span>
-                  <span class="text-slate-400"> ({c.fao?.num_flags ?? '—'})</span>
-                </td>
-                <td class="py-2.5 px-3 text-right">
-                  <span class="font-semibold text-slate-900">{c.best_spidercss?.depth_min ?? '—'}</span>
-                  <span class="text-slate-400"> ({c.fao?.depth_min ?? '—'})</span>
-                </td>
-                <td class="py-2.5 pl-3 text-right">
-                  <span class="font-semibold text-emerald-700">
-                    {c.best_spidercss?.logical_error_rate != null
-                      ? c.best_spidercss.logical_error_rate.toExponential(2)
-                      : '—'}
-                  </span>
-                  <span class="text-slate-400">
-                    {' '}
-                    ({c.fao?.logical_error_rate != null ? c.fao.logical_error_rate.toExponential(2) : '—'})
-                  </span>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
+    <Phase5Benchmarks client:load />
   </section>
 </Layout>
+
