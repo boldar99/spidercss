@@ -491,7 +491,7 @@ export const Phase3Algorithm1: React.FC<Phase3Algorithm1Props> = ({
                   className="w-3.5 h-3.5 accent-emerald-700 cursor-pointer"
                 />
                 <span>
-                  Global 3-Ary ZX-Graph (<code className="font-mono">G_global</code> &amp; Spanning Forest <code className="font-mono">F</code>)
+                  Global Graph (<code className="font-mono">G_global</code> &amp; Spanning Forest <code className="font-mono">F</code>)
                 </span>
               </label>
 

@@ -1,4 +1,5 @@
-import React from 'react';
+import React, { useState } from 'react';
+import { ChevronDown, ChevronUp } from 'lucide-react';
 import type { BasisType, LogicalEdge } from '../../engine/types';
 import type { GlobalPipelineSetup } from '../../engine/spiderLegMatcher';
 
@@ -17,6 +18,7 @@ export const TargetZxPanel: React.FC<TargetZxPanelProps> = ({
   onSelectRemainingEdge,
   onJumpToStep,
 }) => {
+  const [isCollapsed, setIsCollapsed] = useState(false);
   const { pivots, nonPivots, zSpiders, xSpiders, stepSnapshots } = pipeline;
   const numRows = zSpiders.length;
   const numNonPivots = nonPivots.length;
@@ -84,28 +86,52 @@ export const TargetZxPanel: React.FC<TargetZxPanelProps> = ({
             Target Bipartite ZX-State
           </h4>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2.5">
           <span className="text-[11px] text-slate-500 hidden sm:inline">
             Click any <span className="font-semibold text-slate-700">dashed remaining edge</span> to schedule it next, or click an added edge to inspect that step.
           </span>
           <span className="px-2.5 py-0.5 rounded-md font-mono text-[11px] font-semibold bg-slate-100 text-slate-800 border border-slate-200">
             {stepIndex} / {totalSteps} edges
           </span>
+          <button
+            type="button"
+            onClick={() => setIsCollapsed((prev) => !prev)}
+            aria-expanded={!isCollapsed}
+            title={
+              isCollapsed
+                ? 'Expand Target Bipartite ZX-State graph view'
+                : 'Collapse Target Bipartite ZX-State graph view'
+            }
+            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-slate-200 bg-slate-50 hover:bg-slate-100 text-xs font-semibold text-slate-700 transition-colors cursor-pointer"
+          >
+            {isCollapsed ? (
+              <>
+                <ChevronDown className="w-3.5 h-3.5 text-slate-500" />
+                <span>Show Graph</span>
+              </>
+            ) : (
+              <>
+                <ChevronUp className="w-3.5 h-3.5 text-slate-500" />
+                <span>Collapse Graph</span>
+              </>
+            )}
+          </button>
         </div>
       </div>
 
-      {/* SVG Bipartite State Diagram (grows vertically up to 1:1 square, then scrolls) */}
-      <div className="square-panel-wrapper">
-        <div className="square-panel-scroll custom-scrollbar relative bg-slate-50/60 rounded-lg border border-slate-200/80">
-          <svg
-            viewBox={`0 0 ${svgWidth} ${svgHeight}`}
-            style={{
-              width: '100%',
-              minWidth: '560px',
-              height: `${svgHeight}px`,
-            }}
-            className="select-none block"
-          >
+      {/* SVG Bipartite State Diagram (collapsible) */}
+      {!isCollapsed && (
+        <div className="square-panel-wrapper">
+          <div className="square-panel-scroll custom-scrollbar relative bg-slate-50/60 rounded-lg border border-slate-200/80">
+            <svg
+              viewBox={`0 0 ${svgWidth} ${svgHeight}`}
+              style={{
+                width: '100%',
+                minWidth: '560px',
+                height: `${svgHeight}px`,
+              }}
+              className="select-none block"
+            >
             {/* Column Headers */}
             <text
               x={rowX}
@@ -436,9 +462,10 @@ export const TargetZxPanel: React.FC<TargetZxPanelProps> = ({
           </svg>
         </div>
       </div>
+      )}
 
       {/* Legend & Quick Edge Sequence Pills */}
-      <div className="mt-2.5 space-y-2">
+      <div className={isCollapsed ? 'pt-1 space-y-2' : 'mt-2.5 space-y-2'}>
         <div className="flex flex-wrap items-center gap-3 text-[11px] font-mono text-slate-600">
           <span className="inline-flex items-center gap-1.5">
             <span className="w-3.5 h-0.5 bg-slate-900 inline-block"></span>

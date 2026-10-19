@@ -2,15 +2,15 @@ import React, { useMemo, useState } from 'react';
 import { ZoomIn, ZoomOut, Maximize2 } from 'lucide-react';
 import type { BasisType } from '../../engine/types';
 import {
-  computeCatStateTreeLayout,
   dagLongestPathLength,
   getDirectedEdges,
   topologicalGenerations,
 } from '../../engine/catState';
+import type { GlobalPipelineSetup } from '../../engine/spiderLegMatcher';
 import {
-  nodeMapKey,
-  type GlobalPipelineSetup,
-} from '../../engine/spiderLegMatcher';
+  computeGlobalTopologyLayout,
+  buildDirectedEdgePath,
+} from './globalTopologyLayout';
 
 interface GlobalDagPanelProps {
   pipeline: GlobalPipelineSetup;
@@ -32,12 +32,6 @@ export const GlobalDagPanel: React.FC<GlobalDagPanelProps> = ({
   basis,
 }) => {
   const {
-    pivots,
-    nonPivots,
-    zStates,
-    xStates,
-    zNodeMapping,
-    xNodeMapping,
     baseGlobalD,
     globalRoots,
     stepSnapshots,
@@ -52,11 +46,9 @@ export const GlobalDagPanel: React.FC<GlobalDagPanelProps> = ({
 
   const rowFill = basis === 'Z' ? '#86efac' : '#fca5a5';
   const rowStroke = basis === 'Z' ? '#15803d' : '#b91c1c';
-  const rowSym = basis === 'Z' ? 'Z' : 'X';
 
   const colFill = basis === 'Z' ? '#fca5a5' : '#86efac';
   const colStroke = basis === 'Z' ? '#b91c1c' : '#15803d';
-  const colSym = basis === 'Z' ? 'X' : 'Z';
 
   const rootGlobalToCol = useMemo(() => {
     const map = new Map<number, number>();
@@ -81,96 +73,14 @@ export const GlobalDagPanel: React.FC<GlobalDagPanelProps> = ({
   const currentGenCount = activeGenerations.length;
 
   // Deterministic Horizontal (Left-to-Right) DAG Layout:
-  // - Y coordinate: fixed horizontal swimlane track from each CatState's tree-branch decomposition
-  // - X coordinate: topological generation (0, 1, 2, ...) at the current stepIndex, so D_global grows horizontally left-to-right!
+  // - Y coordinate: fixed horizontal swimlane tracks ordered by qubit index q_0 .. q_{N-1}
+  // - X coordinate: topological generation (0, 1, 2, ...) at the current stepIndex, growing left-to-right
   const dagLayout = useMemo(() => {
-    const genOfNode = new Map<number, number>();
-    activeGenerations.forEach((layer, genIdx) => {
-      for (const gId of layer) {
-        genOfNode.set(gId, genIdx);
-      }
-    });
-
-    const firstGenX = 142;
-    const genStepX = 96;
-    const rowStepY = 46;
-    const bandPadTop = 26;
-    const bandPadBottom = 26;
-    const bandGapY = 12;
-    const topHeaderH = 44;
-
-    const yTrackOfNode = new Map<number, number>();
-    const swimlanes: Array<{
-      kind: 'Z' | 'X';
-      index: number;
-      label: string;
-      y: number;
-      h: number;
-    }> = [];
-
-    let cursorY = topHeaderH;
-
-    // Upper swimlanes: Row Cat States
-    zStates.forEach((st, i) => {
-      const treeGrid = computeCatStateTreeLayout(st);
-      const bandH =
-        bandPadTop +
-        Math.max(0, treeGrid.numRows - 1) * rowStepY +
-        bandPadBottom;
-      const qCol = pivots[i];
-
-      swimlanes.push({
-        kind: 'Z',
-        index: i,
-        label: `${rowSym}_${i} (q_${qCol})`,
-        y: cursorY,
-        h: bandH,
-      });
-
-      for (const [localId, cell] of treeGrid.coords.entries()) {
-        const gId = zNodeMapping.get(nodeMapKey(i, localId));
-        if (gId !== undefined) {
-          yTrackOfNode.set(gId, cursorY + bandPadTop + cell.row * rowStepY);
-        }
-      }
-      cursorY += bandH + bandGapY;
-    });
-
-    cursorY += 8;
-
-    // Lower swimlanes: Non-Pivot Column Cat States
-    xStates.forEach((st, j) => {
-      const treeGrid = computeCatStateTreeLayout(st);
-      const bandH =
-        bandPadTop +
-        Math.max(0, treeGrid.numRows - 1) * rowStepY +
-        bandPadBottom;
-      const qCol = nonPivots[j];
-
-      swimlanes.push({
-        kind: 'X',
-        index: j,
-        label: `${colSym}_${j} (q_${qCol})`,
-        y: cursorY,
-        h: bandH,
-      });
-
-      for (const [localId, cell] of treeGrid.coords.entries()) {
-        const gId = xNodeMapping.get(nodeMapKey(j, localId));
-        if (gId !== undefined) {
-          yTrackOfNode.set(gId, cursorY + bandPadTop + cell.row * rowStepY);
-        }
-      }
-      cursorY += bandH + bandGapY;
-    });
-
-    const posMap = new Map<number, { x: number; y: number; gen: number }>();
-    for (const [nodeId] of baseGlobalD.nodes.entries()) {
-      const gen = genOfNode.get(nodeId) ?? 0;
-      const x = firstGenX + gen * genStepX;
-      const y = yTrackOfNode.get(nodeId) ?? topHeaderH + 24;
-      posMap.set(nodeId, { x, y, gen });
-    }
+    const topology = computeGlobalTopologyLayout(
+      pipeline,
+      activeGenerations,
+      basis
+    );
 
     const edgesToRender: DagEdgeRenderItem[] = [];
     for (const e of getDirectedEdges(baseGlobalD)) {
@@ -214,73 +124,18 @@ export const GlobalDagPanel: React.FC<GlobalDagPanelProps> = ({
       }
     }
 
-    const numGens = Math.max(1, activeGenerations.length);
-    const svgWidth = Math.max(
-      640,
-      firstGenX + Math.max(0, numGens - 1) * genStepX + 80
-    );
-    const svgHeight = Math.max(460, cursorY + 24);
-
     return {
-      posMap,
-      swimlanes,
+      ...topology,
       edgesToRender,
-      firstGenX,
-      genStepX,
-      numGens,
-      svgWidth,
-      svgHeight,
     };
   }, [
     activeGenerations,
     baseGlobalD,
-    colSym,
-    nonPivots,
-    pivots,
-    rowSym,
+    basis,
+    pipeline,
     stepIndex,
     stepSnapshots,
-    xNodeMapping,
-    xStates,
-    zNodeMapping,
-    zStates,
   ]);
-
-  const nodeRadius = 11.5;
-
-  // Compute SVG path for a directed edge from (x1, y1) to (x2, y2) flowing left-to-right
-  const buildDirectedEdgePath = (
-    x1: number,
-    y1: number,
-    x2: number,
-    y2: number
-  ): string => {
-    const dx = x2 - x1;
-    const dy = y2 - y1;
-    const len = Math.hypot(dx, dy);
-    if (len < 1e-3) return '';
-
-    const startPad = nodeRadius + 1.5;
-    const endPad = nodeRadius + 4.5;
-
-    // Same horizontal track: crisp straight arrow
-    if (Math.abs(dy) < 2) {
-      const dirX = dx >= 0 ? 1 : -1;
-      const sx = x1 + dirX * startPad;
-      const tx = x2 - dirX * endPad;
-      return `M ${sx} ${y1} L ${tx} ${y2}`;
-    }
-
-    // Cross-track edge: smooth cubic Bezier curve with shortened endpoints
-    const ux = dx / len;
-    const uy = dy / len;
-    const sx = x1 + ux * startPad;
-    const sy = y1 + uy * startPad;
-    const tx = x2 - ux * endPad;
-    const ty = y2 - uy * endPad;
-    const midX = (sx + tx) / 2;
-    return `M ${sx} ${sy} C ${midX} ${sy}, ${midX} ${ty}, ${tx} ${ty}`;
-  };
 
   const cnotEdgeCount = dagLayout.edgesToRender.filter(
     (e) => e.edgeType === 'cnot'
@@ -355,7 +210,7 @@ export const GlobalDagPanel: React.FC<GlobalDagPanelProps> = ({
       </div>
 
       <p className="text-[11px] text-slate-500 mb-2.5">
-        Nodes sit on their cat-state horizontal swimlanes and advance rightward across topological generations (<code className="font-mono">Gen 0 → Gen {Math.max(0, currentGenCount - 1)}</code>) as external CNOTs insert dashed orange causal edges{' '}
+        Groups are ordered by qubit index (<code className="font-mono">q_0..q_{pipeline.N - 1}</code>). Nodes sit on their horizontal swimlanes and advance rightward across topological generations (<code className="font-mono">Gen 0 → Gen {Math.max(0, currentGenCount - 1)}</code>) as external CNOTs insert dashed orange causal edges{' '}
         <code className="font-mono">P_D(u(a)) → u(b)</code> and{' '}
         <code className="font-mono">P_D(u(b)) → u(a)</code>.
       </p>
@@ -415,30 +270,36 @@ export const GlobalDagPanel: React.FC<GlobalDagPanelProps> = ({
               </marker>
             </defs>
 
-            {/* 0. Horizontal Swimlane Bands for Each Cat State */}
-            {dagLayout.swimlanes.map((lane) => (
-              <g key={`lane-${lane.kind}-${lane.index}`}>
-                <rect
-                  x={14}
-                  y={lane.y}
-                  width={dagLayout.svgWidth - 28}
-                  height={lane.h}
-                  rx={10}
-                  fill={lane.kind === 'Z' ? '#f0fdf4' : '#fff1f2'}
-                  fillOpacity={0.55}
-                  stroke={lane.kind === 'Z' ? '#bbf7d0' : '#fecdd3'}
-                  strokeWidth={1.1}
-                />
-                <text
-                  x={26}
-                  y={lane.y + lane.h / 2 + 4}
-                  textAnchor="start"
-                  className="font-mono text-[10.5px] font-bold fill-slate-700"
-                >
-                  {lane.label}
-                </text>
-              </g>
-            ))}
+            {/* 0. Horizontal Swimlane Bands for Each Cat State (ordered by qubit index) */}
+            {dagLayout.swimlanes.map((lane) => {
+              const isZ = lane.kind === 'Z';
+              const isGreen = (basis === 'Z' && isZ) || (basis === 'X' && !isZ);
+              return (
+                <g key={`lane-${lane.kind}-${lane.index}-${lane.qubitCol}`}>
+                  <rect
+                    x={14}
+                    y={lane.y}
+                    width={dagLayout.svgWidth - 28}
+                    height={lane.h}
+                    rx={10}
+                    fill={isGreen ? '#f0fdf4' : '#fff1f2'}
+                    fillOpacity={0.55}
+                    stroke={isGreen ? '#bbf7d0' : '#fecdd3'}
+                    strokeWidth={1.1}
+                  />
+                  <text
+                    x={26}
+                    y={lane.y + lane.h / 2 + 4}
+                    textAnchor="start"
+                    className={`font-mono text-[10.5px] font-bold ${
+                      isGreen ? 'fill-emerald-800' : 'fill-rose-800'
+                    }`}
+                  >
+                    {lane.label}
+                  </text>
+                </g>
+              );
+            })}
 
             {/* 0b. Topological Generation Column Headers & Vertical Guides */}
             {Array.from({ length: dagLayout.numGens }, (_, gIdx) => {
