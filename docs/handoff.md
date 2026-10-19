@@ -94,35 +94,22 @@ All client-side compiler engine modules are implemented in `docs/src/engine/` an
 
 ---
 
-## 4. Remaining Work: Milestones 4 and 5
-
-### Milestone 4: Phase 3 ($G_{\text{global}}, D_{\text{global}}$ & Algorithm 1) & Phase 4 (Circuit Extraction + 3-Way Qubit Reuse)
-1. **Build Phase 3 Components (`docs/src/components/phase3/`)**:
-   - Powered by `buildGlobalPipelineAndSnapshots` in `src/engine/spiderLegMatcher.ts`.
-   - `Phase3Algorithm1.tsx`: Heuristic selector (`critical_path_first`, `earliest_start_first`, `active_spider_first`, `sa_sequence_distance`, `joint_resource`, `random`), Safe Hook-Error Splits toggle, and playback controls (`|<< Reset`, `< Prev`, `Play/Pause`, `Next >`, `>>| All`, plus step slider `0 .. stepSnapshots.length`).
-   - `TargetZxPanel.tsx`: Shows the target bipartite ZX-diagram with added edges (solid dark), active edge at `stepSnapshots[stepIndex - 1]` (glowing amber), and remaining edges (dashed gray; clicking a remaining edge in Walkthrough Mode appends it next).
-   - `GlobalGraphPanel.tsx`: SVG visualization of $G_{\text{global}}$ up to `stepIndex`:
-     - Groups nodes by their parent cat state ($Z_0 \dots Z_{r-1}$ and $X_0 \dots X_{c-1}$).
-     - Draws spanning forest $F$ edges in bold (`3.2px #0f172a`), root nodes (`globalRoots`) with a blue square outline (`#2563eb`), and added CNOT edges up to `stepIndex`.
-   - `GlobalDagPanel.tsx`: SVG visualization of $D_{\text{global}}$ up to `stepIndex` laid out top-to-bottom via `@dagrejs/dagre`:
-     - **Solid black arrows**: `edge_type === 'tree'`.
-     - **Dashed red arrows (`#dc2626`)**: `edge_type === 'missing_link'`.
-     - **Dashed orange arrows (`#ea580c`)**: `edge_type === 'cnot'` added up to `stepIndex`, highlighting the active step's parent nodes `zParentGlobalNodes` and `xParentGlobalNodes` ($P_{D_{\text{global}}}(u(a)) \to u(b)$ and $P_{D_{\text{global}}}(u(b)) \to u(a)$).
-2. **Build Phase 4 Components (`docs/src/components/phase4/`)**:
-   - Powered by `compileFromGlobalPipeline(pipeline, reuseTarget)` in `src/engine/qubitReuse.ts`.
-   - `Phase4Extraction.tsx`:
-     - **4-Stage Extraction Morph (`GridZxMorphCanvas.tsx`)** matching Paper Figure 7 (`figures/full-extraction.tikz`):
-       - `(a) Completed G_global` $\to$ `(b) 2D Grid-Aligned ZX` (X = topological generation in $D_{\text{global}}$, Y = qubit wire) $\to$ `(c) Identity-Padded & Unfused ZX` $\to$ `(d) Quantum Circuit`.
-     - **3-Way Qubit Reuse Selector Bar**:
-       - Three buttons right above the circuit viewer:
-         1. **`No Qubit Reuse`** (`reuseTarget = 'None'`)
-         2. **`Optimize Depth`** (`reuseTarget = 'depth'`)
-         3. **`Minimize Simultaneous Qubits`** (`reuseTarget = 'qubits'`)
-       - Displays live metric badges (`numQubits`, `numDataQubits`, `numFlagMeasurements`, `numCx`, `cnotDepth`, `circuitDepth`) and updates the circuit diagram immediately.
-     - `QuantumCircuitSvg.tsx`: Clean horizontal quantum wire diagram rendering `R`/`RX` init boxes, vertical `CX` gates (control dot $\bullet$ and target $\oplus$), and `M`/`MX` flag measurement meters.
-     - `CircuitExportBox.tsx`: Tabbed `.stim` (`compiled.stimText`) and `.qasm` (`compiled.qasmText`) code viewer with Copy & Download buttons.
+### Milestone 4 (Completed & Verified)
+- **Phase 3 Components (`docs/src/components/phase3/`)**:
+  - `Phase3Algorithm1.tsx`: Heuristic selector (`critical_path_first`, `earliest_start_first`, `active_spider_first`, `sa_sequence_distance`, `joint_resource`, `random`), Safe Hook-Error Splits toggle, step callout banner, and playback controls (`|<< Reset`, `< Prev`, `Play/Pause`, `Next >`, `>>| All`, plus step slider `0 .. stepSnapshots.length` and speed selector).
+  - `TargetZxPanel.tsx`: Renders the target bipartite ZX-diagram with added edges (solid dark with step number badges), active edge at `stepSnapshots[stepIndex - 1]` (glowing amber), and clickable remaining edges (dashed gray) that schedule any chosen edge next.
+  - `GlobalGraphPanel.tsx`: Renders $G_{\text{global}}$ up to `stepIndex` with cat-state cluster boxes ($Z_0 \dots Z_{r-1}$ and $X_0 \dots X_{c-1}$), bold spanning forest $F$ edges (`3.2px #0f172a`), blue square root outlines (`#2563eb`), and external CNOT edges.
+  - `GlobalDagPanel.tsx`: Top-to-bottom `@dagrejs/dagre` layout of $D_{\text{global}}$ up to `stepIndex` with solid black tree arrows, dashed red `missing_link` flag-ordering arrows, and dashed orange causal CNOT arrows highlighting $P_{D_{\text{global}}}(u(a)) \to u(b)$ and $P_{D_{\text{global}}}(u(b)) \to u(a)$.
+- **Phase 4 Components (`docs/src/components/phase4/`)**:
+  - `GridZxMorphCanvas.tsx`: Interactive 4-stage extraction morph matching Figure 7 of the paper (`(a) Completed G_global` $\to$ `(b) 2D Grid-Aligned ZX` $\to$ `(c) Identity-Padded & Unfused ZX` $\to$ `(d) Extracted Quantum Circuit`).
+  - `Phase4Extraction.tsx`: Precomputes and compares all 3 Qubit Reuse modes (`1. No Qubit Reuse`, `2. Optimize Depth`, `3. Minimize Simultaneous Qubits`) with live metric badges (`Simultaneous Qubits`, `Data Qubits`, `Flag Measurements`, `CNOT Count`, `CNOT Depth`, `Total Circuit Depth`).
+  - `QuantumCircuitSvg.tsx`: Horizontal quantum wire diagram rendering `|0⟩`/`|+⟩` resets, `H` gates, vertical `CX` gates, `M`/`MX` flag measurement meters, and toggleable ancilla reuse lifetime bands.
+  - `CircuitExportBox.tsx`: Tabbed `.stim` (with optional depolarizing noise injection at rate $p$) and OpenQASM 2.0 (`.qasm`) code viewer with Copy & Download buttons.
+- **Mounted in `StudioShell.tsx`**: Synchronized with Phase 1 & Phase 2 via `buildGlobalPipelineAndSnapshots`.
 
 ---
+
+## 4. Remaining Work: Milestone 5
 
 ### Milestone 5: Phase 5 Benchmarks, Final Integration & Build Verification
 1. **Build Phase 5 Components (`docs/src/components/phase5/`)**:

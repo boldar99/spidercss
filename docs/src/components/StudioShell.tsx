@@ -1,18 +1,68 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { useStore } from '@nanostores/react';
-import { BookOpen, Sliders, CheckCircle2 } from 'lucide-react';
+import { BookOpen, Sliders, CheckCircle2, AlertTriangle } from 'lucide-react';
 import {
   $compilerStore,
-  setPostPhase2Branch,
   setStudioMode,
 } from '../stores/compilerStore';
+import { buildGlobalPipelineAndSnapshots } from '../engine/spiderLegMatcher';
 import { Phase1CodeSpec } from './phase1/Phase1CodeSpec';
 import { Phase2RrefOptim } from './phase2/Phase2RrefOptim';
 import { ZxRewritesView } from './branch/ZxRewritesView';
+import { Phase3Algorithm1 } from './phase3/Phase3Algorithm1';
+import { Phase4Extraction } from './phase4/Phase4Extraction';
 
 export const StudioShell: React.FC = () => {
   const state = useStore($compilerStore);
-  const { mode, postPhase2Branch, validation, rrefSnapshot } = state;
+  const {
+    mode,
+    basis,
+    d,
+    postPhase2Branch,
+    validation,
+    rrefSnapshot,
+    analyzeHookErrors,
+    routingHeuristic,
+    customEdgeOrder,
+    reuseTarget,
+  } = state;
+
+  // Build synchronized GlobalPipelineSetup for Phase 3 & Phase 4
+  const pipelineState = useMemo(() => {
+    if (!validation.valid) {
+      return {
+        pipeline: null,
+        error: 'Fix CSS code validation errors in Phase 1 to run Algorithm 1 & Circuit Extraction.',
+      };
+    }
+    try {
+      const pipeline = buildGlobalPipelineAndSnapshots({
+        H: rrefSnapshot.unpermutedMatrix,
+        d,
+        basis,
+        analyzeHookErrors,
+        routingHeuristic,
+        customEdgeOrder,
+        reuseTarget,
+        seed: 42,
+      });
+      return { pipeline, error: null };
+    } catch (err) {
+      return {
+        pipeline: null,
+        error: err instanceof Error ? err.message : String(err),
+      };
+    }
+  }, [
+    validation.valid,
+    rrefSnapshot.unpermutedMatrix,
+    d,
+    basis,
+    analyzeHookErrors,
+    routingHeuristic,
+    customEdgeOrder,
+    reuseTarget,
+  ]);
 
   return (
     <div className="space-y-6">
@@ -75,35 +125,29 @@ export const StudioShell: React.FC = () => {
       {/* Phase 2: Bipartite ZX-Diagram & RREF Basis Optimization */}
       <Phase2RrefOptim />
 
-      {/* Post-Phase 2 Branch: [Show ZX-Rewrites] vs [Show Pipeline] */}
+      {/* Post-Phase 2 Branch: [Show ZX-Rewrites] vs [Show Pipeline] (Phase 3 & Phase 4) */}
       {postPhase2Branch === 'rewrites' ? (
         <ZxRewritesView />
+      ) : pipelineState.pipeline ? (
+        <>
+          {/* Phase 3: Global Data Structures (G_global, D_global) & Algorithm 1 */}
+          <Phase3Algorithm1 pipeline={pipelineState.pipeline} />
+
+          {/* Phase 4: Circuit Extraction, 3-Way Qubit Reuse & Export */}
+          <Phase4Extraction pipeline={pipelineState.pipeline} />
+        </>
       ) : (
-        <div className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6 shadow-2xs">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div>
-              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-mono font-semibold bg-emerald-100 text-emerald-800 border border-emerald-200">
-                Phase 3 &amp; Phase 4 Pipeline Active
-              </span>
-              <h3 className="text-base font-bold text-slate-900 mt-1">
-                Ready for Algorithm 1 (<code className="font-mono text-xs">G_global, D_global</code>) &amp; Circuit Extraction
-              </h3>
-              <p className="text-xs text-slate-600 mt-0.5">
-                Current RREF basis locked in with{' '}
-                <strong>{rrefSnapshot.cost.totalCnots} CNOTs</strong> and{' '}
-                <strong>{rrefSnapshot.cost.totalFlags} flag qubits</strong>. You can also inspect the theoretical ZX-rewrites at any time.
-              </p>
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5 text-xs text-amber-900 flex items-center gap-3">
+          <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0" />
+          <div>
+            <div className="font-bold">
+              Pipeline paused until CSS matrix satisfies unique-ones RREF
             </div>
-            <button
-              type="button"
-              onClick={() => setPostPhase2Branch('rewrites')}
-              className="px-3.5 py-2 rounded-xl border border-purple-300 bg-purple-50 text-purple-900 text-xs font-semibold hover:bg-purple-100 transition-colors cursor-pointer self-start sm:self-auto"
-            >
-              Inspect [Show ZX-Rewrites]
-            </button>
+            <div className="mt-0.5 text-amber-800">{pipelineState.error}</div>
           </div>
         </div>
       )}
     </div>
   );
 };
+
