@@ -1,6 +1,7 @@
 ---
 import Layout from '../layouts/Layout.astro';
 import HeroSection from '../components/HeroSection.astro';
+import { StudioShell } from '../components/StudioShell';
 import qeccsIndex from '../generated/qeccsIndex.json';
 import catStatesBundle from '../generated/catStatesBundle.json';
 import simulationSummary from '../generated/simulationSummary.json';
@@ -17,43 +18,8 @@ const totalBenchmarkedCodes = simulationSummary.total_codes;
     totalBenchmarkedCodes={totalBenchmarkedCodes}
   />
 
-  <section id="studio" class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-12">
-    <div class="rounded-2xl border border-slate-200 bg-white p-6 sm:p-8 shadow-2xs">
-      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-6">
-        <div>
-          <span class="text-xs font-mono uppercase tracking-wider text-emerald-700 font-semibold">
-            Interactive 5-Phase Compiler Studio
-          </span>
-          <h2 class="text-2xl font-bold text-slate-900 mt-1">
-            From CSS Stabilizers to Fault-Tolerant Quantum Circuits
-          </h2>
-        </div>
-        <div class="flex items-center gap-2 text-xs font-mono text-slate-500 bg-slate-50 px-3 py-2 rounded-lg border border-slate-200">
-          <span>Synced Assets:</span>
-          <strong class="text-slate-800">{totalPresets} QECCs</strong>
-          <span>•</span>
-          <strong class="text-slate-800">{totalCatStates} Cat States</strong>
-          <span>•</span>
-          <strong class="text-slate-800">{simulationSummary.total_runs} Sim Runs</strong>
-        </div>
-      </div>
-
-      <div class="mt-6 grid grid-cols-1 md:grid-cols-5 gap-3 text-sm">
-        {[
-          { phase: 'Phase 1', title: 'Code & State Spec', desc: 'Select QECC preset or input custom H_x, H_z / Pauli strings & |0̄⟩ or |+̄⟩.' },
-          { phase: 'Phase 2', title: 'RREF Basis Optim', desc: 'Column-permuted Gaussian elimination & bipartite ZX-diagram cost.' },
-          { phase: 'Phase 3', title: 'Algorithm 1 (G & D)', desc: 'Step-by-step cat-state leg matching & causal DAG construction.' },
-          { phase: 'Phase 4', title: 'Circuit & Qubit Reuse', desc: 'Grid morphing, 3-way qubit reuse, and .stim / .qasm export.' },
-          { phase: 'Phase 5', title: 'Monte Carlo Benchmarks', desc: 'Compare LER, acceptance rate, CNOTs, flags, & depth vs. FaO.' },
-        ].map((item) => (
-          <div class="rounded-xl border border-slate-200/80 bg-slate-50/60 p-4">
-            <div class="text-xs font-mono font-semibold text-emerald-700">{item.phase}</div>
-            <div class="font-semibold text-slate-900 mt-0.5">{item.title}</div>
-            <p class="text-xs text-slate-600 mt-1.5 leading-relaxed">{item.desc}</p>
-          </div>
-        ))}
-      </div>
-    </div>
+  <section id="studio" class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-10">
+    <StudioShell client:load />
   </section>
 
   <section id="benchmarks" class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-6">

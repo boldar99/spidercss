@@ -76,44 +76,25 @@ All client-side compiler engine modules are implemented in `docs/src/engine/` an
 
 ---
 
-## 4. Remaining Work: Milestones 3, 4, and 5
-
-### Milestone 3: Shared Store + Interactive Phases 1, 2 & `[Show ZX-Rewrites]` Branch
-1. **Create `docs/src/stores/compilerStore.ts`** (or top-level state inside `StudioShell.tsx`):
-   - Hold:
-     - `mode`: `'walkthrough' | 'gui'`
-     - `selectedPresetId`: default `'FAO/7_1_3'` (Steane `[[7, 1, 3]]`)
-     - `basis`: `'Z' | 'X'` (`|0̄⟩` vs `|+̄⟩`)
-     - `H_x`, `H_z`, `d`
-     - `rrefSnapshot`: current `RrefTrialSnapshot` & `bestMatrix` from Phase 2
-     - `postPhase2Branch`: `'rewrites' | 'pipeline'`
-     - `analyzeHookErrors`: `boolean` (Safe Hook-Error Splits toggle)
-     - `routingHeuristic`: `RoutingHeuristicType` (default `'critical_path_first'` or `'sa_sequence_distance'`)
-     - `customEdgeOrder`: `LogicalEdge[] | undefined` (when user manually clicks edges in Phase 3 Walkthrough)
-     - `alg1StepIndex`: current step index `0 .. stepSnapshots.length` in Phase 3
-     - `reuseTarget`: `'None' | 'depth' | 'qubits'` for the 3-way selector in Phase 4
-2. **Build Phase 1 Components (`docs/src/components/phase1/`)**:
-   - `Phase1CodeSpec.tsx`: Preset selector grouped by `FAO`, `MQT`, `misc` (from `src/generated/qeccsIndex.json`), `|0̄⟩` vs `|+̄⟩` toggle, distance `d` input, and `[[n, k, d]]` validation badge.
-   - `StabilizerEditor.tsx`: Dual-mode editor switching between:
-     - Interactive binary matrix grids for $H_x$ and $H_z$ (click cells to toggle `0`/`1`, add/remove rows/cols).
-     - Pauli strings textarea (`IIIXXXX`, `IXXIIXX`, etc.) using `matricesToPauliStrings` and `parsePauliStrings`, highlighting any anti-commuting row pairs from `validateCSSCode`.
-3. **Build Phase 2 Components (`docs/src/components/phase2/`)**:
-   - `Phase2RrefOptim.tsx`:
-     - **Walkthrough Mode**: 4 step buttons (`1. (Re-)Generate Permutation` $\to$ `2. Permute Columns` $\to$ `3. Gaussian Elimination (RREF)` with sub-step scrubber over `rowOpSteps` $\to$ `4. Un-permute Columns`).
-     - **Full GUI Mode**: `max_basis_tries` input + `Run Basis Optimizer` button calling `rowOptimizeMatrix` (or `compiler.worker.ts`) and plotting `costHistory`.
-   - `MatrixStepViewer.tsx`: Renders the binary matrix with emerald highlights on the unique-one pivot columns (`pivots`) and displays row weights $w_j$ and column weights $w_i$.
-   - `BipartiteZxView.tsx`: Custom SVG rendering the bipartite ZX-diagram:
-     - $Z$-spiders (`#86efac` fill, `#15803d` stroke) on one side, each with 1 black boundary wire to its pivot qubit $p_j$.
-     - Non-pivot $X$-spiders (`#fca5a5` fill, `#b91c1c` stroke) on the other side, each with 1 black boundary wire to its data qubit $i$.
-     - **Purple idealized internal edges (`#9333ea`)** between row $j$ and non-pivot column $i$ where $M'_{j,i} = 1$.
-   - `CostBreakdownCard.tsx`: Renders the Eq. 8 formula (via KaTeX) and live CNOT & flag breakdown from `detailedCostBreakdown(M', t)` vs. initial cost.
-4. **Build Branch View (`docs/src/components/branch/ZxRewritesView.tsx`)**:
-   - Activated when user clicks **`[Show ZX-Rewrites]`** after Phase 2:
-     - **Stage 1**: Unidealize internal edges (purple $\to$ black physical edges, Proposition 3.4).
-     - **Stage 2**: Interactive toggle for **Safe Hook-Error Splits** (`computeXSpiderSplits`), showing which high-degree spiders split into chains of smaller spiders and how many flags are saved.
-     - **Stage 3**: Unfuse high-degree spiders into 3-ary **Well-Ordered Cat States** (`wellOrderedFtCatStateData`), with a button to switch to **`[Show Pipeline]` (Phase 3)**.
+### Milestone 3 (Completed & Verified)
+- **Shared Reactive Store & Math Helper**:
+  - `docs/src/stores/compilerStore.ts`: Nanostores store (`$compilerStore`) holding `mode`, `selectedPresetId`, `basis`, `H_x`, `H_z`, `d`, `validation`, `rrefSnapshot`, `bestMatrix`, `rrefWalkthroughStage`, `rrefRowOpStepIndex`, `maxBasisTries`, `costHistory`, `postPhase2Branch`, `rewriteStage`, `analyzeHookErrors`, `routingHeuristic`, `customEdgeOrder`, `alg1StepIndex`, and `reuseTarget`.
+  - `docs/src/components/common/Math.tsx`: Reusable KaTeX inline/display formula component.
+- **Phase 1 Components (`docs/src/components/phase1/`)**:
+  - `Phase1CodeSpec.tsx`: Grouped preset selector (`FAO`, `MQT`, `misc`), quick-select pills, $|\overline{0}\rangle$ vs. $|\overline{+}\rangle$ toggle, distance $d$ input, and `[[n, k, d]]` validation & `Perfect QECC (X-spiders at t−1)` badge.
+  - `StabilizerEditor.tsx`: Dual-mode interactive binary grid for $H_x, H_z$ (click to toggle `0`/`1`, add/remove rows & columns) and Pauli string editor (`I, X, Z`) with live $H_x H_z^T = 0 \pmod 2$ anti-commuting row pair highlighting.
+- **Phase 2 Components (`docs/src/components/phase2/`)**:
+  - `Phase2RrefOptim.tsx`: 4-stage interactive RREF walkthrough (`1. (Re-)Generate Permutation` $\to$ `2. Permute Columns` $\to$ `3. Gaussian Elimination` with row-op scrubber $\to$ `4. Un-permute Columns`), plus Web-Worker Monte Carlo basis optimizer (`max_basis_tries` + convergence sparkline) and post-Phase 2 branch selector (`[Show ZX-Rewrites]` vs. `[Show Pipeline]`).
+  - `MatrixStepViewer.tsx`: Renders the binary parity matrix across all 4 stages with emerald highlights on the unique-one pivot columns (`pivots`), row weights $w_j$, and column weights $w_i$.
+  - `BipartiteZxView.tsx`: Custom SVG rendering the bipartite ZX-diagram with green $Z$-spiders, red $X$-spiders, purple idealized internal edges (`#9333ea`), and black physical boundary wires (`#1e293b`).
+  - `CostBreakdownCard.tsx`: KaTeX Eq. (8) cost breakdown plus the `is_perfect` QECC note showing the actual post-unfusion CNOT/flag count when Hamming or Golay codes unfuse non-pivot spiders at distance $t - 1$.
+- **Branch View (`docs/src/components/branch/ZxRewritesView.tsx`) & `StudioShell.tsx`**:
+  - 3-stage interactive `[Show ZX-Rewrites]` branch view: (1) Edge unidealization & interactive fault propagation tester, (2) Safe Hook-Error Splits toggle & `is_perfect` ($t-1$ unfusion for Hamming/Golay codes) breakdown table, and (3) Well-Ordered Cat State unfusion inspector `(G, F, D)`.
+  - Mounted in `docs/src/pages/index.astro` via `StudioShell.tsx`.
 
 ---
+
+## 4. Remaining Work: Milestones 4 and 5
 
 ### Milestone 4: Phase 3 ($G_{\text{global}}, D_{\text{global}}$ & Algorithm 1) & Phase 4 (Circuit Extraction + 3-Way Qubit Reuse)
 1. **Build Phase 3 Components (`docs/src/components/phase3/`)**:
