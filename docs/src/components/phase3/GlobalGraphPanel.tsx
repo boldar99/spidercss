@@ -164,122 +164,109 @@ export const GlobalGraphPanel: React.FC<GlobalGraphPanelProps> = ({
 
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-4 flex flex-col">
-      {/* Header with integrated "Select Global Structure View", dual metrics badges, and zoom controls */}
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 border-b border-slate-100 pb-3 mb-3">
-        <div className="space-y-1">
-          <span className="text-[11px] font-mono uppercase tracking-wider font-bold text-slate-500">
-            Panel 2 • Global Structure Network
-          </span>
-          <h4 className="text-xs sm:text-sm font-bold text-slate-900">
-            {viewMode === 'G' ? (
-              <>
-                Global Graph <code className="font-mono text-xs">G_global</code> &amp; Spanning Forest <code className="font-mono text-xs">F</code>
-              </>
-            ) : (
-              <>
-                Global Digraph <code className="font-mono text-xs">D_global</code> (Horizontal Topological Growth)
-              </>
-            )}
-          </h4>
-        </div>
-
-        {/* View Switcher, Both Metrics Badges, and Zoom Controls */}
-        <div className="flex flex-wrap items-center gap-2.5">
-          {/* Integrated Select Global Structure View Pills */}
-          <div
-            role="radiogroup"
-            aria-label="Select Global Structure View"
-            className="inline-flex items-center p-0.5 rounded-lg border border-slate-200 bg-slate-100 text-xs font-semibold"
-          >
-            <button
-              type="button"
-              onClick={() => setViewMode('G')}
-              className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold transition-all cursor-pointer ${
-                viewMode === 'G'
-                  ? 'bg-white text-emerald-950 shadow-2xs font-bold border border-emerald-400'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
+      {/* Header: Radio button view switcher under NETWORK, dual metrics badges, and zoom controls on the right */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3 mb-3">
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex flex-col gap-1.5">
+            <span className="text-[11px] font-mono uppercase tracking-wider font-bold text-slate-500">
+              Panel 2 • Global Structure Network
+            </span>
+            {/* Radio button view switcher right under NETWORK */}
+            <div
+              role="radiogroup"
+              aria-label="Select Global Structure View"
+              className="inline-flex items-center p-0.5 rounded-lg border border-slate-200 bg-slate-100 text-xs font-semibold"
             >
-              <span
-                className={`w-2 h-2 rounded-full ${
-                  viewMode === 'G' ? 'bg-emerald-600' : 'bg-slate-400'
+              <button
+                type="button"
+                onClick={() => setViewMode('G')}
+                className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-semibold transition-all cursor-pointer ${
+                  viewMode === 'G'
+                    ? 'bg-white text-emerald-950 shadow-2xs font-bold border border-emerald-400'
+                    : 'text-slate-600 hover:text-slate-900'
                 }`}
-              />
-              <span>Global Graph (G_global &amp; F)</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setViewMode('D')}
-              className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold transition-all cursor-pointer ${
-                viewMode === 'D'
-                  ? 'bg-white text-amber-950 shadow-2xs font-bold border border-amber-400'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              <span
-                className={`w-2 h-2 rounded-full ${
-                  viewMode === 'D' ? 'bg-amber-600' : 'bg-slate-400'
+              >
+                <span
+                  className={`w-2 h-2 rounded-full ${
+                    viewMode === 'G' ? 'bg-emerald-600' : 'bg-slate-400'
+                  }`}
+                />
+                <span>Global Graph</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode('D')}
+                className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-semibold transition-all cursor-pointer ${
+                  viewMode === 'D'
+                    ? 'bg-white text-amber-950 shadow-2xs font-bold border border-amber-400'
+                    : 'text-slate-600 hover:text-slate-900'
                 }`}
-              />
-              <span>Digraph (D_global)</span>
-            </button>
+              >
+                <span
+                  className={`w-2 h-2 rounded-full ${
+                    viewMode === 'D' ? 'bg-amber-600' : 'bg-slate-400'
+                  }`}
+                />
+                <span>Global Digraph</span>
+              </button>
+            </div>
           </div>
 
-          {/* Dual Metrics Badges: Spiders/Roots AND Depth/Generations displayed together! */}
-          <div className="flex items-center gap-1.5">
-            <span className="px-2.5 py-0.5 rounded-md font-mono text-[11px] font-semibold bg-blue-50 text-blue-800 border border-blue-200">
+          {/* Dual Metrics Badges: Spiders/Roots AND Depth/Generations */}
+          <div className="flex flex-wrap items-center gap-1.5 self-end pb-0.5">
+            <span className="px-2.5 py-1 rounded-md font-mono text-[11px] font-semibold bg-blue-50 text-blue-800 border border-blue-200">
               {baseGlobalG.nodes.size} spiders • {Object.keys(globalRoots).length} roots
             </span>
-            <span className="px-2.5 py-0.5 rounded-md font-mono text-[11px] font-semibold bg-amber-50 text-amber-900 border border-amber-200">
+            <span className="px-2.5 py-1 rounded-md font-mono text-[11px] font-semibold bg-amber-50 text-amber-900 border border-amber-200">
               Depth: {currentDepth} ({currentGenCount} generations)
             </span>
           </div>
+        </div>
 
-          {/* Zoom Controls (Zoom does NOT change when toggling viewMode) */}
-          <div className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 p-0.5 text-[11px] font-mono">
+        {/* Zoom Controls on the right */}
+        <div className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 p-0.5 text-[11px] font-mono sm:ml-auto self-start sm:self-center">
+          <button
+            type="button"
+            onClick={() =>
+              setZoom((z) =>
+                Math.max(0.4, Number(((z ?? 1) - 0.2).toFixed(2)))
+              )
+            }
+            title="Zoom Out"
+            className="p-1 rounded hover:bg-white text-slate-700 cursor-pointer"
+          >
+            <ZoomOut className="w-3.5 h-3.5" />
+          </button>
+          <button
+            type="button"
+            onClick={() => setZoom(1)}
+            title="Reset to 100% scale"
+            className="px-1.5 py-0.5 rounded hover:bg-white text-slate-700 cursor-pointer"
+          >
+            {zoom === null ? 'Fit' : `${Math.round(effectiveZoom * 100)}%`}
+          </button>
+          <button
+            type="button"
+            onClick={() =>
+              setZoom((z) =>
+                Math.min(2.5, Number(((z ?? 1) + 0.2).toFixed(2)))
+              )
+            }
+            title="Zoom In"
+            className="p-1 rounded hover:bg-white text-slate-700 cursor-pointer"
+          >
+            <ZoomIn className="w-3.5 h-3.5" />
+          </button>
+          {zoom !== null && (
             <button
               type="button"
-              onClick={() =>
-                setZoom((z) =>
-                  Math.max(0.4, Number(((z ?? 1) - 0.2).toFixed(2)))
-                )
-              }
-              title="Zoom Out"
-              className="p-1 rounded hover:bg-white text-slate-700 cursor-pointer"
+              onClick={() => setZoom(null)}
+              title="Fit to panel width"
+              className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 cursor-pointer"
             >
-              <ZoomOut className="w-3.5 h-3.5" />
+              <Maximize2 className="w-3 h-3" /> Fit
             </button>
-            <button
-              type="button"
-              onClick={() => setZoom(1)}
-              title="Reset to 100% scale"
-              className="px-1.5 py-0.5 rounded hover:bg-white text-slate-700 cursor-pointer"
-            >
-              {zoom === null ? 'Fit' : `${Math.round(effectiveZoom * 100)}%`}
-            </button>
-            <button
-              type="button"
-              onClick={() =>
-                setZoom((z) =>
-                  Math.min(2.5, Number(((z ?? 1) + 0.2).toFixed(2)))
-                )
-              }
-              title="Zoom In"
-              className="p-1 rounded hover:bg-white text-slate-700 cursor-pointer"
-            >
-              <ZoomIn className="w-3.5 h-3.5" />
-            </button>
-            {zoom !== null && (
-              <button
-                type="button"
-                onClick={() => setZoom(null)}
-                title="Fit to panel width"
-                className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 cursor-pointer"
-              >
-                <Maximize2 className="w-3 h-3" /> Fit
-              </button>
-            )}
-          </div>
+          )}
         </div>
       </div>
 
@@ -287,7 +274,7 @@ export const GlobalGraphPanel: React.FC<GlobalGraphPanelProps> = ({
       <p className="text-[11px] text-slate-500 mb-2.5">
         {viewMode === 'G' ? (
           <>
-            Spiders copy the horizontal topological positions from <code className="font-mono">D_global</code>, updating with each added edge. All ports exit to the right boundary as output qubits <code className="font-mono">q_0..q_{pipeline.N - 1}</code> (quantum state preparation). Bold edges form spanning forest <code className="font-mono">F</code> from roots <code className="font-mono">r_k</code> (blue boxes).
+            Spiders copy the horizontal topological positions from the Global Digraph, updating with each added edge. All ports exit to the right boundary as output qubits <code className="font-mono">q_0..q_{pipeline.N - 1}</code> (quantum state preparation). Bold edges form spanning forest <code className="font-mono">F</code> from roots <code className="font-mono">r_k</code> (blue boxes).
           </>
         ) : (
           <>
@@ -377,7 +364,8 @@ export const GlobalGraphPanel: React.FC<GlobalGraphPanelProps> = ({
                     x={26}
                     y={lane.y + lane.h / 2 + 4}
                     textAnchor="start"
-                    className={`font-mono text-[10.5px] font-bold ${
+                    fontSize={10.5}
+                    className={`font-mono font-bold ${
                       isGreen ? 'fill-emerald-800' : 'fill-rose-800'
                     }`}
                   >
@@ -416,7 +404,8 @@ export const GlobalGraphPanel: React.FC<GlobalGraphPanelProps> = ({
                     x={gx}
                     y={17.5}
                     textAnchor="middle"
-                    className="font-mono text-[9.5px] font-semibold fill-slate-600"
+                    fontSize={9.5}
+                    className="font-mono font-semibold fill-slate-600"
                   >
                     Gen {gIdx}
                   </text>
@@ -432,7 +421,8 @@ export const GlobalGraphPanel: React.FC<GlobalGraphPanelProps> = ({
                   x={layout.rightBoundaryX}
                   y={18}
                   textAnchor="middle"
-                  className="fill-slate-500 text-[9.5px] font-mono font-semibold"
+                  fontSize={9.5}
+                  className="fill-slate-500 font-mono font-semibold"
                 >
                   Output Qubits
                 </text>
@@ -469,7 +459,8 @@ export const GlobalGraphPanel: React.FC<GlobalGraphPanelProps> = ({
                         x={layout.rightBoundaryX + 8}
                         y={pos.y + 3.5}
                         textAnchor="start"
-                        className="font-mono text-[10.5px] font-bold fill-slate-800"
+                        fontSize={10.5}
+                        className="font-mono font-bold fill-slate-800"
                       >
                         q_{pos.dataQubitCol}
                       </text>
@@ -654,7 +645,8 @@ export const GlobalGraphPanel: React.FC<GlobalGraphPanelProps> = ({
                         x={pos.x}
                         y={pos.y + 24}
                         textAnchor="middle"
-                        className="font-mono text-[9px] font-bold fill-blue-700"
+                        fontSize={9}
+                        className="font-mono font-bold fill-blue-700"
                       >
                         r_{pos.rootTreeCol}
                       </text>
@@ -677,7 +669,8 @@ export const GlobalGraphPanel: React.FC<GlobalGraphPanelProps> = ({
                           x={pos.x}
                           y={pos.y - 15.5}
                           textAnchor="middle"
-                          className="font-mono text-[9px] font-bold fill-amber-800"
+                          fontSize={9}
+                          className="font-mono font-bold fill-amber-800"
                         >
                           {activeSnap?.zGlobalNode === gId ? 'u(a)' : 'u(b)'}
                         </text>
@@ -702,7 +695,8 @@ export const GlobalGraphPanel: React.FC<GlobalGraphPanelProps> = ({
                           x={pos.x}
                           y={pos.y - 15.5}
                           textAnchor="middle"
-                          className="font-mono text-[9px] font-bold fill-orange-700"
+                          fontSize={9}
+                          className="font-mono font-bold fill-orange-700"
                         >
                           P_D
                         </text>
@@ -722,7 +716,8 @@ export const GlobalGraphPanel: React.FC<GlobalGraphPanelProps> = ({
                     x={pos.x}
                     y={pos.y + 3.5}
                     textAnchor="middle"
-                    className="font-mono text-[9.5px] font-bold fill-slate-900"
+                    fontSize={9.5}
+                    className="font-mono font-bold fill-slate-900"
                   >
                     {gId}
                   </text>

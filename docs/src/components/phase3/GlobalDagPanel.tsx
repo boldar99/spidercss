@@ -154,7 +154,7 @@ export const GlobalDagPanel: React.FC<GlobalDagPanelProps> = ({
             Causal Dependency DAG (Left-to-Right)
           </span>
           <h4 className="text-xs sm:text-sm font-bold text-slate-900">
-            Global Digraph <code className="font-mono text-xs">D_global</code> (Horizontal Topological Growth)
+            Global Digraph
           </h4>
         </div>
 
@@ -296,7 +296,8 @@ export const GlobalDagPanel: React.FC<GlobalDagPanelProps> = ({
                     x={26}
                     y={lane.y + lane.h / 2 + 4}
                     textAnchor="start"
-                    className={`font-mono text-[10.5px] font-bold ${
+                    fontSize={10.5}
+                    className={`font-mono font-bold ${
                       isGreen ? 'fill-emerald-800' : 'fill-rose-800'
                     }`}
                   >
@@ -335,7 +336,8 @@ export const GlobalDagPanel: React.FC<GlobalDagPanelProps> = ({
                     x={gx}
                     y={17.5}
                     textAnchor="middle"
-                    className="font-mono text-[9.5px] font-semibold fill-slate-600"
+                    fontSize={9.5}
+                    className="font-mono font-semibold fill-slate-600"
                   >
                     Gen {gIdx}
                   </text>
@@ -446,7 +448,8 @@ export const GlobalDagPanel: React.FC<GlobalDagPanelProps> = ({
                         x={pos.x}
                         y={pos.y + 23.5}
                         textAnchor="middle"
-                        className="font-mono text-[8.5px] font-bold fill-blue-700"
+                        fontSize={8.5}
+                        className="font-mono font-bold fill-blue-700"
                       >
                         r_{rootCol}
                       </text>
@@ -467,7 +470,8 @@ export const GlobalDagPanel: React.FC<GlobalDagPanelProps> = ({
                         x={pos.x}
                         y={pos.y - 15.5}
                         textAnchor="middle"
-                        className="font-mono text-[9px] font-bold fill-amber-800"
+                        fontSize={9}
+                        className="font-mono font-bold fill-amber-800"
                       >
                         {activeSnap?.zGlobalNode === gId ? 'u(a)' : 'u(b)'}
                       </text>
@@ -489,7 +493,8 @@ export const GlobalDagPanel: React.FC<GlobalDagPanelProps> = ({
                         x={pos.x}
                         y={pos.y - 15.5}
                         textAnchor="middle"
-                        className="font-mono text-[9px] font-bold fill-orange-700"
+                        fontSize={9}
+                        className="font-mono font-bold fill-orange-700"
                       >
                         P_D
                       </text>
@@ -508,7 +513,8 @@ export const GlobalDagPanel: React.FC<GlobalDagPanelProps> = ({
                     x={pos.x}
                     y={pos.y + 3.5}
                     textAnchor="middle"
-                    className="font-mono text-[9.5px] font-bold fill-slate-900"
+                    fontSize={9.5}
+                    className="font-mono font-bold fill-slate-900"
                   >
                     {gId}
                   </text>

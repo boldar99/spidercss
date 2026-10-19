@@ -203,8 +203,8 @@ export function computeGlobalTopologyLayout(
 
   const numGens = Math.max(1, activeGenerations.length);
   const lastGenX = firstGenX + Math.max(0, numGens - 1) * genStepX;
-  const rightBoundaryX = lastGenX + 80;
-  const svgWidth = Math.max(680, rightBoundaryX + 65);
+  const rightBoundaryX = lastGenX + 130;
+  const svgWidth = Math.max(720, rightBoundaryX + 80);
   // Snug vertical fit: end just after the last swimlane (cursorY already has the bandGapY)
   const svgHeight = cursorY + 8;
 

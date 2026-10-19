@@ -18,7 +18,7 @@ export const TargetZxPanel: React.FC<TargetZxPanelProps> = ({
   onSelectRemainingEdge,
   onJumpToStep,
 }) => {
-  const [isCollapsed, setIsCollapsed] = useState(false);
+  const [isCollapsed, setIsCollapsed] = useState(true);
   const { pivots, nonPivots, zSpiders, xSpiders, stepSnapshots } = pipeline;
   const numRows = zSpiders.length;
   const numNonPivots = nonPivots.length;
@@ -137,7 +137,8 @@ export const TargetZxPanel: React.FC<TargetZxPanelProps> = ({
               x={rowX}
               y={22}
               textAnchor="middle"
-              className="fill-slate-700 text-[11px] font-sans font-semibold"
+              fontSize={11}
+              className="fill-slate-700 font-sans font-semibold"
             >
               Row {rowSym}-Spiders
             </text>
@@ -145,7 +146,8 @@ export const TargetZxPanel: React.FC<TargetZxPanelProps> = ({
               x={colX}
               y={colBaseY - 20}
               textAnchor="middle"
-              className="fill-slate-700 text-[11px] font-sans font-semibold"
+              fontSize={11}
+              className="fill-slate-700 font-sans font-semibold"
             >
               Col {colSym}-Spiders
             </text>
@@ -153,7 +155,8 @@ export const TargetZxPanel: React.FC<TargetZxPanelProps> = ({
               x={rightBoundaryX}
               y={22}
               textAnchor="middle"
-              className="fill-slate-500 text-[10.5px] font-mono font-semibold"
+              fontSize={10.5}
+              className="fill-slate-500 font-mono font-semibold"
             >
               Output Legs (q_0..q_{totalQubits - 1})
             </text>
@@ -182,7 +185,8 @@ export const TargetZxPanel: React.FC<TargetZxPanelProps> = ({
                   x={rightBoundaryX + 7}
                   y={p.y + 3.5}
                   textAnchor="start"
-                  className="font-mono text-[9.5px] font-semibold fill-slate-700"
+                  fontSize={9.5}
+                  className="font-mono font-semibold fill-slate-700"
                 >
                   q_{pivotQ}
                 </text>
@@ -212,7 +216,8 @@ export const TargetZxPanel: React.FC<TargetZxPanelProps> = ({
                   x={rightBoundaryX + 7}
                   y={p.y + 3.5}
                   textAnchor="start"
-                  className="font-mono text-[9.5px] font-semibold fill-slate-700"
+                  fontSize={9.5}
+                  className="font-mono font-semibold fill-slate-700"
                 >
                   q_{colQ}
                 </text>
@@ -314,7 +319,8 @@ export const TargetZxPanel: React.FC<TargetZxPanelProps> = ({
                   x={bx}
                   y={by + 3}
                   textAnchor="middle"
-                  className="font-mono text-[8.5px] font-bold fill-white"
+                  fontSize={8.5}
+                  className="font-mono font-bold fill-white"
                 >
                   {idx + 1}
                 </text>
@@ -364,7 +370,8 @@ export const TargetZxPanel: React.FC<TargetZxPanelProps> = ({
                     x={mx}
                     y={my + 3.5}
                     textAnchor="middle"
-                    className="font-mono text-[9.5px] font-bold fill-white"
+                    fontSize={9.5}
+                    className="font-mono font-bold fill-white"
                   >
                     #{stepIndex}
                   </text>
@@ -401,7 +408,8 @@ export const TargetZxPanel: React.FC<TargetZxPanelProps> = ({
                   x={p.x}
                   y={p.y + 3.5}
                   textAnchor="middle"
-                  className="font-mono text-[9.5px] font-bold fill-slate-900"
+                  fontSize={9.5}
+                  className="font-mono font-bold fill-slate-900"
                 >
                   {rowSym}
                   {rIdx}
@@ -441,7 +449,8 @@ export const TargetZxPanel: React.FC<TargetZxPanelProps> = ({
                   x={p.x}
                   y={p.y + 3.5}
                   textAnchor="middle"
-                  className="font-mono text-[9.5px] font-bold fill-slate-900"
+                  fontSize={9.5}
+                  className="font-mono font-bold fill-slate-900"
                 >
                   {colSym}
                   {npIdx}
@@ -451,7 +460,8 @@ export const TargetZxPanel: React.FC<TargetZxPanelProps> = ({
                     x={p.x}
                     y={p.y - 14}
                     textAnchor="middle"
-                    className="font-mono text-[8.5px] font-bold fill-purple-800"
+                    fontSize={8.5}
+                    className="font-mono font-bold fill-purple-800"
                   >
                     [{chunks.join('+')}]
                   </text>
