@@ -40,6 +40,9 @@ jobs:
         working-directory: docs
         run: npm install
 
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+
       - name: Sync data assets & build Astro site
         working-directory: docs
         env:
