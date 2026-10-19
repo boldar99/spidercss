@@ -424,196 +424,232 @@ export const ZxRewritesView: React.FC = () => {
               </span>
             </div>
 
-            <svg
-              viewBox="0 0 540 300"
-              className="w-full h-auto bg-white rounded-lg border border-slate-200/80 select-none"
-            >
-              {bipartiteEdges.map((e, idx) => {
-                const y1 =
-                  45 +
-                  (e.rIdx / Math.max(1, matrix.length - 1)) * 210;
-                const y2 =
-                  45 +
-                  (e.npIdx / Math.max(1, nonPivots.length - 1)) * 210;
-                const isSelected =
-                  activeFaultEdge &&
-                  activeFaultEdge.rIdx === e.rIdx &&
-                  activeFaultEdge.npIdx === e.npIdx;
+            {(() => {
+              const numR = matrix.length;
+              const numC = nonPivots.length;
+              const totalQ = numR + numC;
+              const stepY =
+                totalQ > 24 ? 19 : totalQ > 14 ? 25 : totalQ > 9 ? 31 : 36;
+              const topP = 32;
+              const gapY = stepY * 0.55;
+              const svgH = Math.max(
+                280,
+                topP +
+                  32 +
+                  Math.max(0, numR - 1) * stepY +
+                  gapY +
+                  Math.max(0, numC) * stepY
+              );
+              const rightOutX = 478;
 
-                return (
-                  <g
-                    key={idx}
-                    onClick={() => setSelectedFaultEdgeIdx(idx)}
-                    className="cursor-pointer"
-                  >
-                    <line
-                      x1={155}
-                      y1={matrix.length === 1 ? 150 : y1}
-                      x2={385}
-                      y2={nonPivots.length === 1 ? 150 : y2}
-                      stroke={isSelected ? '#d97706' : '#1e293b'}
-                      strokeWidth={isSelected ? 3.5 : 2}
-                      strokeOpacity={isSelected ? 1 : 0.65}
-                    />
-                    {isSelected && (
-                      <g>
+              const getRPos = (rIdx: number) => ({
+                x: 90 + (numR <= 1 ? 0.5 : rIdx / (numR - 1)) * 95,
+                y: topP + rIdx * stepY,
+              });
+              const colBaseY = topP + Math.max(1, numR) * stepY + gapY;
+              const getCPos = (npIdx: number) => ({
+                x: 260 + (numC <= 1 ? 0.5 : npIdx / (numC - 1)) * 105,
+                y: colBaseY + npIdx * stepY,
+              });
+
+              return (
+                <svg
+                  viewBox={`0 0 540 ${svgH}`}
+                  className="w-full h-auto bg-white rounded-lg border border-slate-200/80 select-none"
+                >
+                  {/* Output Boundary Wires (All exiting to the right as a ZX state) */}
+                  {Array.from({ length: numR }, (_, rIdx) => {
+                    const p = getRPos(rIdx);
+                    const exitsPivot =
+                      activeFaultEdge?.rIdx === rIdx &&
+                      ((basis === 'Z' && selectedFaultType === 'X') ||
+                        (basis === 'X' && selectedFaultType === 'Z'));
+                    return (
+                      <g key={`rw-${rIdx}`}>
+                        <line
+                          x1={p.x}
+                          y1={p.y}
+                          x2={rightOutX}
+                          y2={p.y}
+                          stroke={exitsPivot ? '#dc2626' : '#1e293b'}
+                          strokeWidth={exitsPivot ? 3.4 : 1.8}
+                        />
+                        <text
+                          x={rightOutX + 8}
+                          y={p.y + 4}
+                          textAnchor="start"
+                          className="font-mono text-[10.5px] font-semibold fill-slate-700"
+                        >
+                          q_{pivots[rIdx]}
+                        </text>
+                        {exitsPivot && (
+                          <circle
+                            cx={rightOutX - 38}
+                            cy={p.y}
+                            r={8}
+                            fill={
+                              selectedFaultType === 'X' ? '#fca5a5' : '#86efac'
+                            }
+                            stroke="#dc2626"
+                            strokeWidth={2}
+                          />
+                        )}
+                      </g>
+                    );
+                  })}
+
+                  {nonPivots.map((colQ, npIdx) => {
+                    const p = getCPos(npIdx);
+                    const exitsCol =
+                      activeFaultEdge?.npIdx === npIdx &&
+                      ((basis === 'Z' && selectedFaultType === 'Z') ||
+                        (basis === 'X' && selectedFaultType === 'X'));
+                    return (
+                      <g key={`cw-${colQ}`}>
+                        <line
+                          x1={p.x}
+                          y1={p.y}
+                          x2={rightOutX}
+                          y2={p.y}
+                          stroke={exitsCol ? '#dc2626' : '#1e293b'}
+                          strokeWidth={exitsCol ? 3.4 : 1.8}
+                        />
+                        <text
+                          x={rightOutX + 8}
+                          y={p.y + 4}
+                          textAnchor="start"
+                          className="font-mono text-[10.5px] font-semibold fill-slate-700"
+                        >
+                          q_{colQ}
+                        </text>
+                        {exitsCol && (
+                          <circle
+                            cx={rightOutX - 38}
+                            cy={p.y}
+                            r={8}
+                            fill={
+                              selectedFaultType === 'X' ? '#fca5a5' : '#86efac'
+                            }
+                            stroke="#dc2626"
+                            strokeWidth={2}
+                          />
+                        )}
+                      </g>
+                    );
+                  })}
+
+                  {/* Internal Bipartite Edges Between Diagonal 1 and Diagonal 2 */}
+                  {bipartiteEdges.map((e, idx) => {
+                    const p1 = getRPos(e.rIdx);
+                    const p2 = getCPos(e.npIdx);
+                    const isSelected =
+                      activeFaultEdge &&
+                      activeFaultEdge.rIdx === e.rIdx &&
+                      activeFaultEdge.npIdx === e.npIdx;
+                    const mx = (p1.x + p2.x) / 2;
+                    const my = (p1.y + p2.y) / 2;
+
+                    return (
+                      <g
+                        key={idx}
+                        onClick={() => setSelectedFaultEdgeIdx(idx)}
+                        className="cursor-pointer"
+                      >
+                        <line
+                          x1={p1.x}
+                          y1={p1.y}
+                          x2={p2.x}
+                          y2={p2.y}
+                          stroke={isSelected ? '#d97706' : '#1e293b'}
+                          strokeWidth={isSelected ? 3.5 : 2}
+                          strokeOpacity={isSelected ? 1 : 0.65}
+                        />
+                        {isSelected && (
+                          <g>
+                            <circle
+                              cx={mx}
+                              cy={my}
+                              r={10}
+                              fill={
+                                selectedFaultType === 'X'
+                                  ? '#fca5a5'
+                                  : '#86efac'
+                              }
+                              stroke={
+                                selectedFaultType === 'X'
+                                  ? '#b91c1c'
+                                  : '#15803d'
+                              }
+                              strokeWidth={2}
+                            />
+                            <text
+                              x={mx}
+                              y={my + 3.5}
+                              textAnchor="middle"
+                              className="font-mono text-[9px] font-bold fill-slate-900"
+                            >
+                              π
+                            </text>
+                          </g>
+                        )}
+                      </g>
+                    );
+                  })}
+
+                  {/* Diagonal 1: Row Spiders */}
+                  {Array.from({ length: numR }, (_, rIdx) => {
+                    const p = getRPos(rIdx);
+                    return (
+                      <g key={`r-${rIdx}`}>
                         <circle
-                          cx={270}
-                          cy={
-                            ((matrix.length === 1 ? 150 : y1) +
-                              (nonPivots.length === 1 ? 150 : y2)) /
-                            2
-                          }
-                          r={10}
-                          fill={
-                            selectedFaultType === 'X' ? '#fca5a5' : '#86efac'
-                          }
-                          stroke={
-                            selectedFaultType === 'X' ? '#b91c1c' : '#15803d'
-                          }
+                          cx={p.x}
+                          cy={p.y}
+                          r={12.5}
+                          fill={rowFill}
+                          stroke={rowStroke}
                           strokeWidth={2}
                         />
                         <text
-                          x={270}
-                          y={
-                            ((matrix.length === 1 ? 150 : y1) +
-                              (nonPivots.length === 1 ? 150 : y2)) /
-                              2 +
-                            3.5
-                          }
+                          x={p.x}
+                          y={p.y + 4}
                           textAnchor="middle"
-                          className="font-mono text-[9px] font-bold fill-slate-900"
+                          className="font-mono text-[10px] font-bold fill-slate-900"
                         >
-                          π
+                          {rowSym}
+                          {rIdx}
                         </text>
                       </g>
-                    )}
-                  </g>
-                );
-              })}
+                    );
+                  })}
 
-              {/* Left Row Spiders */}
-              {Array.from({ length: matrix.length }, (_, rIdx) => {
-                const cy =
-                  matrix.length === 1
-                    ? 150
-                    : 45 + (rIdx / Math.max(1, matrix.length - 1)) * 210;
-                const exitsLeft =
-                  activeFaultEdge?.rIdx === rIdx &&
-                  ((basis === 'Z' && selectedFaultType === 'X') ||
-                    (basis === 'X' && selectedFaultType === 'Z'));
-                return (
-                  <g key={`r-${rIdx}`}>
-                    <line
-                      x1={65}
-                      y1={cy}
-                      x2={155}
-                      y2={cy}
-                      stroke={exitsLeft ? '#dc2626' : '#1e293b'}
-                      strokeWidth={exitsLeft ? 3.5 : 2}
-                    />
-                    <text
-                      x={56}
-                      y={cy + 4}
-                      textAnchor="end"
-                      className="font-mono text-[11px] font-semibold fill-slate-700"
-                    >
-                      q_{pivots[rIdx]}
-                    </text>
-                    {exitsLeft && (
-                      <circle
-                        cx={105}
-                        cy={cy}
-                        r={8}
-                        fill={
-                          selectedFaultType === 'X' ? '#fca5a5' : '#86efac'
-                        }
-                        stroke="#dc2626"
-                        strokeWidth={2}
-                      />
-                    )}
-                    <circle
-                      cx={155}
-                      cy={cy}
-                      r={13}
-                      fill={rowFill}
-                      stroke={rowStroke}
-                      strokeWidth={2}
-                    />
-                    <text
-                      x={155}
-                      y={cy + 4}
-                      textAnchor="middle"
-                      className="font-mono text-[10px] font-bold fill-slate-900"
-                    >
-                      {rowSym}
-                      {rIdx}
-                    </text>
-                  </g>
-                );
-              })}
-
-              {/* Right Non-Pivot Spiders */}
-              {nonPivots.map((colQ, npIdx) => {
-                const cy =
-                  nonPivots.length === 1
-                    ? 150
-                    : 45 + (npIdx / Math.max(1, nonPivots.length - 1)) * 210;
-                const exitsRight =
-                  activeFaultEdge?.npIdx === npIdx &&
-                  ((basis === 'Z' && selectedFaultType === 'Z') ||
-                    (basis === 'X' && selectedFaultType === 'X'));
-                return (
-                  <g key={`c-${colQ}`}>
-                    <line
-                      x1={385}
-                      y1={cy}
-                      x2={475}
-                      y2={cy}
-                      stroke={exitsRight ? '#dc2626' : '#1e293b'}
-                      strokeWidth={exitsRight ? 3.5 : 2}
-                    />
-                    <text
-                      x={484}
-                      y={cy + 4}
-                      textAnchor="start"
-                      className="font-mono text-[11px] font-semibold fill-slate-700"
-                    >
-                      q_{colQ}
-                    </text>
-                    {exitsRight && (
-                      <circle
-                        cx={435}
-                        cy={cy}
-                        r={8}
-                        fill={
-                          selectedFaultType === 'X' ? '#fca5a5' : '#86efac'
-                        }
-                        stroke="#dc2626"
-                        strokeWidth={2}
-                      />
-                    )}
-                    <circle
-                      cx={385}
-                      cy={cy}
-                      r={13}
-                      fill={colFill}
-                      stroke={colStroke}
-                      strokeWidth={2}
-                    />
-                    <text
-                      x={385}
-                      y={cy + 4}
-                      textAnchor="middle"
-                      className="font-mono text-[10px] font-bold fill-slate-900"
-                    >
-                      {colSym}
-                      {npIdx}
-                    </text>
-                  </g>
-                );
-              })}
-            </svg>
+                  {/* Diagonal 2: Non-Pivot Spiders */}
+                  {nonPivots.map((colQ, npIdx) => {
+                    const p = getCPos(npIdx);
+                    return (
+                      <g key={`c-${colQ}`}>
+                        <circle
+                          cx={p.x}
+                          cy={p.y}
+                          r={12.5}
+                          fill={colFill}
+                          stroke={colStroke}
+                          strokeWidth={2}
+                        />
+                        <text
+                          x={p.x}
+                          y={p.y + 4}
+                          textAnchor="middle"
+                          className="font-mono text-[10px] font-bold fill-slate-900"
+                        >
+                          {colSym}
+                          {npIdx}
+                        </text>
+                      </g>
+                    );
+                  })}
+                </svg>
+              );
+            })()}
           </div>
         </div>
       )}

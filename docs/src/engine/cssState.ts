@@ -43,7 +43,7 @@ export function validateCSSCode(
       n: 0,
       k: 0,
       d,
-      t: Math.floor((d - 1) / 2),
+      t: Math.floor(d / 2),
       rankHx: 0,
       rankHz: 0,
       isPerfect: false,
@@ -93,7 +93,7 @@ export function validateCSSCode(
   const rankHx = errors.length === 0 ? rankGF2(H_x) : 0;
   const rankHz = errors.length === 0 ? rankGF2(H_z) : 0;
   const k = Math.max(0, n - rankHx - rankHz);
-  const t = Math.max(0, Math.floor((d - 1) / 2));
+  const t = Math.max(0, Math.floor(d / 2));
   const isPerfect = errors.length === 0 && isPerfectCode(H_x, d);
 
   return {

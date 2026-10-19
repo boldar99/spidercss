@@ -324,6 +324,7 @@ export function applyRowOptimizationResult(result: RowOptimizationResult): void 
   const cur = $compilerStore.get();
   $compilerStore.set({
     ...cur,
+    permutationSeed: cur.permutationSeed + 1,
     initialCost: result.initialCost,
     rrefSnapshot: result.bestTrial,
     bestMatrix: result.bestMatrix,
@@ -342,7 +343,7 @@ export function runBasisOptimizationSync(
 ): RowOptimizationResult {
   const cur = $compilerStore.get();
   const tries = maxTries ?? cur.maxBasisTries;
-  const useSeed = seed ?? cur.permutationSeed;
+  const useSeed = seed ?? cur.permutationSeed + 1;
   const result = rowOptimizeMatrix(
     cur.activeInputMatrix,
     cur.validation.t,

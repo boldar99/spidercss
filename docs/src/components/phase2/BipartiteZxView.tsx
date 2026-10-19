@@ -26,31 +26,49 @@ export const BipartiteZxView: React.FC<BipartiteZxViewProps> = ({
 
   const numRows = matrix.length;
   const numNonPivots = nonPivots.length;
+  const totalQubits = numRows + numNonPivots;
 
-  // Compute SVG geometry
+  // Compute SVG geometry for two diagonal lines of spiders with all boundary wires exiting to the right (ZX state)
   const layout = useMemo(() => {
-    const maxNodes = Math.max(numRows, numNonPivots, 1);
-    const verticalSpacing = maxNodes > 18 ? 34 : maxNodes > 10 ? 42 : 54;
-    const topPadding = 44;
-    const bottomPadding = 36;
-    const height = Math.max(260, topPadding + bottomPadding + (maxNodes - 1) * verticalSpacing);
+    const totalTracks = Math.max(2, totalQubits);
+    const stepY =
+      totalTracks > 28 ? 20 : totalTracks > 18 ? 25 : totalTracks > 10 ? 32 : 38;
+    const topPadding = 46;
+    const bottomPadding = 34;
+    const groupGapY = stepY * 0.55;
+    const height = Math.max(
+      290,
+      topPadding +
+        bottomPadding +
+        Math.max(0, numRows - 1) * stepY +
+        groupGapY +
+        Math.max(0, numNonPivots) * stepY
+    );
     const width = 560;
+    const rightBoundaryX = 486;
 
-    const leftBoundaryX = 64;
-    const leftSpiderX = 165;
-    const rightSpiderX = 395;
-    const rightBoundaryX = 496;
+    // Diagonal Line 1: Row Spiders (upper-left diagonal)
+    const rowStartX = 92;
+    const rowEndX = 205;
+    const rowPos = (rIdx: number) => {
+      const frac = numRows <= 1 ? 0.5 : rIdx / (numRows - 1);
+      return {
+        x: rowStartX + frac * (rowEndX - rowStartX),
+        y: topPadding + rIdx * stepY,
+      };
+    };
 
-    const rowSpan = (numRows - 1) * verticalSpacing;
-    const colSpan = (numNonPivots - 1) * verticalSpacing;
-    const centerY = (topPadding + (height - bottomPadding)) / 2;
-
-    const rowY = (rIdx: number) =>
-      numRows <= 1 ? centerY : centerY - rowSpan / 2 + rIdx * verticalSpacing;
-    const colY = (npIdx: number) =>
-      numNonPivots <= 1
-        ? centerY
-        : centerY - colSpan / 2 + npIdx * verticalSpacing;
+    // Diagonal Line 2: Non-Pivot Column Spiders (lower-right diagonal)
+    const colStartX = 255;
+    const colEndX = 385;
+    const colBaseY = topPadding + Math.max(1, numRows) * stepY + groupGapY;
+    const colPos = (npIdx: number) => {
+      const frac = numNonPivots <= 1 ? 0.5 : npIdx / (numNonPivots - 1);
+      return {
+        x: colStartX + frac * (colEndX - colStartX),
+        y: colBaseY + npIdx * stepY,
+      };
+    };
 
     const edges: Array<{
       rIdx: number;
@@ -63,17 +81,19 @@ export const BipartiteZxView: React.FC<BipartiteZxViewProps> = ({
     }> = [];
 
     for (let rIdx = 0; rIdx < numRows; rIdx++) {
+      const p1 = rowPos(rIdx);
       for (let npIdx = 0; npIdx < numNonPivots; npIdx++) {
         const colQubit = nonPivots[npIdx];
         if (matrix[rIdx]?.[colQubit] === 1) {
+          const p2 = colPos(npIdx);
           edges.push({
             rIdx,
             npIdx,
             colQubit,
-            x1: leftSpiderX,
-            y1: rowY(rIdx),
-            x2: rightSpiderX,
-            y2: colY(npIdx),
+            x1: p1.x,
+            y1: p1.y,
+            x2: p2.x,
+            y2: p2.y,
           });
         }
       }
@@ -82,15 +102,12 @@ export const BipartiteZxView: React.FC<BipartiteZxViewProps> = ({
     return {
       width,
       height,
-      leftBoundaryX,
-      leftSpiderX,
-      rightSpiderX,
       rightBoundaryX,
-      rowY,
-      colY,
+      rowPos,
+      colPos,
       edges,
     };
-  }, [matrix, numRows, numNonPivots, nonPivots]);
+  }, [matrix, numRows, numNonPivots, nonPivots, totalQubits]);
 
   // Colors follow basis: for |0̄⟩ (basis='Z'), row spiders are Z (green) and col spiders are X (red).
   // For |+̄⟩ (basis='X'), roles interchange per Definition II.7 of the paper.
@@ -106,266 +123,316 @@ export const BipartiteZxView: React.FC<BipartiteZxViewProps> = ({
 
   const internalEdgeStroke = unidealized ? '#1e293b' : '#9333ea';
 
+  const firstRowPt = numRows > 0 ? layout.rowPos(0) : null;
+  const lastRowPt = numRows > 1 ? layout.rowPos(numRows - 1) : null;
+  const firstColPt = numNonPivots > 0 ? layout.colPos(0) : null;
+  const lastColPt =
+    numNonPivots > 1 ? layout.colPos(numNonPivots - 1) : null;
+
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-2xs">
-      <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
-        <div>
-          <h4 className="text-xs font-bold uppercase tracking-wider text-slate-700">
-            Bipartite ZX-Diagram ({basis === 'Z' ? 'X-RREF' : 'Z-RREF'} Normal Form)
-          </h4>
-          <p className="text-[11px] text-slate-500 mt-0.5">
-            {numRows} row spiders (<KaTeXMath tex={`${rowSym}_j`} />) with pivot boundary wires •{' '}
-            {numNonPivots} non-pivot spiders (<KaTeXMath tex={`${colSym}_i`} />) •{' '}
-            <strong className={unidealized ? 'text-slate-900' : 'text-purple-700'}>
-              {layout.edges.length} {unidealized ? 'physical' : 'idealized'} internal edges
-            </strong>
-          </p>
-        </div>
+    <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-2xs h-full flex flex-col justify-between">
+      <div>
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+          <div>
+            <h4 className="text-xs font-bold uppercase tracking-wider text-slate-700">
+              Bipartite ZX-State Diagram ({basis === 'Z' ? 'X-RREF' : 'Z-RREF'} Normal Form)
+            </h4>
+            <p className="text-[11px] text-slate-500 mt-0.5">
+              {numRows} row spiders (<KaTeXMath tex={`${rowSym}_j`} />) •{' '}
+              {numNonPivots} non-pivot spiders (<KaTeXMath tex={`${colSym}_i`} />) •{' '}
+              all {totalQubits} output legs on the right •{' '}
+              <strong className={unidealized ? 'text-slate-900' : 'text-purple-700'}>
+                {layout.edges.length} {unidealized ? 'physical' : 'idealized'} internal edges
+              </strong>
+            </p>
+          </div>
 
-        {/* Mini Legend */}
-        <div className="flex items-center gap-3 text-[11px] font-mono">
-          <span className="inline-flex items-center gap-1">
-            <span
-              className="w-3 h-3 rounded-full inline-block border-2"
-              style={{ backgroundColor: '#86efac', borderColor: '#15803d' }}
-            />
-            Z-spider
-          </span>
-          <span className="inline-flex items-center gap-1">
-            <span
-              className="w-3 h-3 rounded-full inline-block border-2"
-              style={{ backgroundColor: '#fca5a5', borderColor: '#b91c1c' }}
-            />
-            X-spider
-          </span>
-          <span className="inline-flex items-center gap-1">
-            <span
-              className="w-4 h-0.5 inline-block"
-              style={{ backgroundColor: internalEdgeStroke }}
-            />
-            {unidealized ? 'Noisy Edge' : 'Idealized Edge'}
-          </span>
-        </div>
-      </div>
-
-      <div className="w-full overflow-x-auto custom-scrollbar rounded-lg border border-slate-100 bg-slate-50/50">
-        <svg
-          viewBox={`0 0 ${layout.width} ${layout.height}`}
-          className="w-full h-auto max-h-[460px] select-none"
-        >
-          {/* Column headers inside SVG */}
-          <text
-            x={layout.leftBoundaryX}
-            y={22}
-            textAnchor="middle"
-            className="fill-slate-400 text-[10px] font-mono"
-          >
-            Pivot Qubits
-          </text>
-          <text
-            x={layout.leftSpiderX}
-            y={22}
-            textAnchor="middle"
-            className="fill-slate-700 text-[11px] font-sans font-semibold"
-          >
-            Row {rowSym}-Spiders (deg w_j)
-          </text>
-          <text
-            x={layout.rightSpiderX}
-            y={22}
-            textAnchor="middle"
-            className="fill-slate-700 text-[11px] font-sans font-semibold"
-          >
-            Col {colSym}-Spiders (deg w_i+1)
-          </text>
-          <text
-            x={layout.rightBoundaryX}
-            y={22}
-            textAnchor="middle"
-            className="fill-slate-400 text-[10px] font-mono"
-          >
-            Non-Pivot Qubits
-          </text>
-
-          {/* Internal Bipartite Edges */}
-          {layout.edges.map((e, idx) => {
-            const isHighlighted =
-              hoveredRow === e.rIdx || hoveredColIdx === e.npIdx;
-            const isDimmed =
-              (hoveredRow !== null || hoveredColIdx !== null) && !isHighlighted;
-            const midX = (e.x1 + e.x2) / 2;
-            const dPath = `M ${e.x1} ${e.y1} C ${midX} ${e.y1}, ${midX} ${e.y2}, ${e.x2} ${e.y2}`;
-
-            return (
-              <path
-                key={idx}
-                d={dPath}
-                fill="none"
-                stroke={internalEdgeStroke}
-                strokeWidth={isHighlighted ? 3.4 : 2.3}
-                strokeOpacity={isDimmed ? 0.18 : isHighlighted ? 1 : 0.78}
-                className="transition-all duration-150"
+          {/* Mini Legend */}
+          <div className="flex items-center gap-3 text-[11px] font-mono">
+            <span className="inline-flex items-center gap-1">
+              <span
+                className="w-3 h-3 rounded-full inline-block border-2"
+                style={{ backgroundColor: '#86efac', borderColor: '#15803d' }}
               />
-            );
-          })}
+              Z-spider
+            </span>
+            <span className="inline-flex items-center gap-1">
+              <span
+                className="w-3 h-3 rounded-full inline-block border-2"
+                style={{ backgroundColor: '#fca5a5', borderColor: '#b91c1c' }}
+              />
+              X-spider
+            </span>
+            <span className="inline-flex items-center gap-1">
+              <span
+                className="w-4 h-0.5 inline-block"
+                style={{ backgroundColor: internalEdgeStroke }}
+              />
+              {unidealized ? 'Noisy Edge' : 'Idealized Edge'}
+            </span>
+          </div>
+        </div>
 
-          {/* Left side: Row Spiders + Physical Black Boundary Wires to Pivot Qubits */}
-          {Array.from({ length: numRows }, (_, rIdx) => {
-            const cy = layout.rowY(rIdx);
-            const pivotQ = pivots[rIdx];
-            const wRow = cost.rowWeights[rIdx] ?? 0;
-            const fRow = cost.rowFlagsPerSpider[rIdx] ?? 0;
-            const isHovered = hoveredRow === rIdx;
+        <div className="w-full overflow-x-auto custom-scrollbar rounded-lg border border-slate-100 bg-slate-50/50">
+          <svg
+            viewBox={`0 0 ${layout.width} ${layout.height}`}
+            className="w-full h-auto max-h-[500px] select-none"
+          >
+            {/* Headers */}
+            <text
+              x={145}
+              y={22}
+              textAnchor="middle"
+              className="fill-slate-700 text-[11px] font-sans font-semibold"
+            >
+              Row {rowSym}-Spiders (deg w_j)
+            </text>
+            <text
+              x={320}
+              y={22}
+              textAnchor="middle"
+              className="fill-slate-700 text-[11px] font-sans font-semibold"
+            >
+              Col {colSym}-Spiders (deg w_i+1)
+            </text>
+            <text
+              x={layout.rightBoundaryX}
+              y={22}
+              textAnchor="middle"
+              className="fill-slate-500 text-[10px] font-mono font-semibold"
+            >
+              Output State Legs (q_0..q_{totalQubits - 1})
+            </text>
 
-            return (
-              <g
-                key={`row-${rIdx}`}
-                onMouseEnter={() => setHoveredRow(rIdx)}
-                onMouseLeave={() => setHoveredRow(null)}
-                className="cursor-pointer"
-              >
-                {/* Physical black boundary wire to pivot qubit p_j */}
+            {/* Subtle Diagonal Axis Guides */}
+            {firstRowPt && lastRowPt && (
+              <line
+                x1={firstRowPt.x}
+                y1={firstRowPt.y}
+                x2={lastRowPt.x}
+                y2={lastRowPt.y}
+                stroke="#cbd5e1"
+                strokeWidth={1.2}
+                strokeDasharray="3,3"
+              />
+            )}
+            {firstColPt && lastColPt && (
+              <line
+                x1={firstColPt.x}
+                y1={firstColPt.y}
+                x2={lastColPt.x}
+                y2={lastColPt.y}
+                stroke="#cbd5e1"
+                strokeWidth={1.2}
+                strokeDasharray="3,3"
+              />
+            )}
+
+            {/* 1. Physical Black Output Boundary Wires (All exiting to the right as a ZX state) */}
+            {Array.from({ length: numRows }, (_, rIdx) => {
+              const p = layout.rowPos(rIdx);
+              const pivotQ = pivots[rIdx];
+              const isHovered = hoveredRow === rIdx;
+              const isDimmed =
+                (hoveredRow !== null || hoveredColIdx !== null) && !isHovered;
+
+              return (
+                <g key={`row-wire-${rIdx}`}>
+                  <line
+                    x1={p.x}
+                    y1={p.y}
+                    x2={layout.rightBoundaryX}
+                    y2={p.y}
+                    stroke="#1e293b"
+                    strokeWidth={isHovered ? 2.6 : 1.8}
+                    strokeOpacity={isDimmed ? 0.25 : 0.85}
+                  />
+                  <circle
+                    cx={layout.rightBoundaryX}
+                    cy={p.y}
+                    r={3}
+                    fill="#0f172a"
+                    fillOpacity={isDimmed ? 0.25 : 1}
+                  />
+                  <text
+                    x={layout.rightBoundaryX + 9}
+                    y={p.y + 3.5}
+                    textAnchor="start"
+                    className="fill-emerald-900 font-mono text-[10.5px] font-semibold"
+                    opacity={isDimmed ? 0.35 : 1}
+                  >
+                    {pivotQ !== undefined ? `q_${pivotQ}` : '—'}
+                  </text>
+                </g>
+              );
+            })}
+
+            {nonPivots.map((colQubit, npIdx) => {
+              const p = layout.colPos(npIdx);
+              const isHovered = hoveredColIdx === npIdx;
+              const isDimmed =
+                (hoveredRow !== null || hoveredColIdx !== null) && !isHovered;
+
+              return (
+                <g key={`col-wire-${colQubit}`}>
+                  <line
+                    x1={p.x}
+                    y1={p.y}
+                    x2={layout.rightBoundaryX}
+                    y2={p.y}
+                    stroke="#1e293b"
+                    strokeWidth={isHovered ? 2.6 : 1.8}
+                    strokeOpacity={isDimmed ? 0.25 : 0.85}
+                  />
+                  <circle
+                    cx={layout.rightBoundaryX}
+                    cy={p.y}
+                    r={3}
+                    fill="#0f172a"
+                    fillOpacity={isDimmed ? 0.25 : 1}
+                  />
+                  <text
+                    x={layout.rightBoundaryX + 9}
+                    y={p.y + 3.5}
+                    textAnchor="start"
+                    className="fill-rose-900 font-mono text-[10.5px] font-semibold"
+                    opacity={isDimmed ? 0.35 : 1}
+                  >
+                    q_{colQubit}
+                  </text>
+                </g>
+              );
+            })}
+
+            {/* 2. Internal Bipartite Edges Connecting the Two Diagonal Lines */}
+            {layout.edges.map((e, idx) => {
+              const isHighlighted =
+                hoveredRow === e.rIdx || hoveredColIdx === e.npIdx;
+              const isDimmed =
+                (hoveredRow !== null || hoveredColIdx !== null) &&
+                !isHighlighted;
+
+              return (
                 <line
-                  x1={layout.leftBoundaryX}
-                  y1={cy}
-                  x2={layout.leftSpiderX}
-                  y2={cy}
-                  stroke="#1e293b"
-                  strokeWidth={isHovered ? 2.8 : 2}
+                  key={`edge-${idx}`}
+                  x1={e.x1}
+                  y1={e.y1}
+                  x2={e.x2}
+                  y2={e.y2}
+                  stroke={internalEdgeStroke}
+                  strokeWidth={isHighlighted ? 3.2 : 2.1}
+                  strokeOpacity={isDimmed ? 0.16 : isHighlighted ? 1 : 0.78}
+                  className="transition-all duration-150"
                 />
-                {/* Boundary output terminal dot */}
-                <circle
-                  cx={layout.leftBoundaryX}
-                  cy={cy}
-                  r={3.5}
-                  fill="#0f172a"
-                />
-                <text
-                  x={layout.leftBoundaryX - 10}
-                  y={cy + 4}
-                  textAnchor="end"
-                  className="fill-slate-700 font-mono text-[11px] font-semibold"
-                >
-                  {pivotQ !== undefined ? `q_${pivotQ}` : '—'}
-                </text>
+              );
+            })}
 
-                {/* Row Spider Circle */}
-                <circle
-                  cx={layout.leftSpiderX}
-                  cy={cy}
-                  r={isHovered ? 16 : 14}
-                  fill={rowFill}
-                  stroke={rowStroke}
-                  strokeWidth={isHovered ? 2.8 : 2}
-                />
-                <text
-                  x={layout.leftSpiderX}
-                  y={cy + 4}
-                  textAnchor="middle"
-                  fill={rowText}
-                  className="font-mono text-[11px] font-bold"
-                >
-                  {rowSym}
-                  {rIdx}
-                </text>
+            {/* 3. Diagonal Line 1: Row Spiders */}
+            {Array.from({ length: numRows }, (_, rIdx) => {
+              const p = layout.rowPos(rIdx);
+              const wRow = cost.rowWeights[rIdx] ?? 0;
+              const fRow = cost.rowFlagsPerSpider[rIdx] ?? 0;
+              const isHovered = hoveredRow === rIdx;
 
-                {/* Degree & Flag badge */}
-                <text
-                  x={layout.leftSpiderX - 20}
-                  y={cy - 10}
-                  textAnchor="end"
-                  className="fill-slate-500 font-mono text-[9.5px]"
+              return (
+                <g
+                  key={`row-node-${rIdx}`}
+                  onMouseEnter={() => setHoveredRow(rIdx)}
+                  onMouseLeave={() => setHoveredRow(null)}
+                  className="cursor-pointer"
                 >
-                  deg={wRow}
-                  {fRow > 0 ? ` (${fRow}f)` : ''}
-                </text>
-              </g>
-            );
-          })}
+                  <circle
+                    cx={p.x}
+                    cy={p.y}
+                    r={isHovered ? 15 : 13}
+                    fill={rowFill}
+                    stroke={rowStroke}
+                    strokeWidth={isHovered ? 2.8 : 2}
+                  />
+                  <text
+                    x={p.x}
+                    y={p.y + 4}
+                    textAnchor="middle"
+                    fill={rowText}
+                    className="font-mono text-[10.5px] font-bold"
+                  >
+                    {rowSym}
+                    {rIdx}
+                  </text>
 
-          {/* Right side: Non-Pivot Column Spiders + Physical Black Boundary Wires */}
-          {nonPivots.map((colQubit, npIdx) => {
-            const cy = layout.colY(npIdx);
-            const wCol = cost.colWeights[colQubit] ?? 0;
-            const deg = wCol + 1;
-            const fCol = cost.colFlagsPerSpider[colQubit] ?? 0;
-            const isHovered = hoveredColIdx === npIdx;
+                  {/* Degree & Flag badge to the left of the diagonal */}
+                  <text
+                    x={p.x - 18}
+                    y={p.y + 3.5}
+                    textAnchor="end"
+                    className="fill-slate-500 font-mono text-[9.5px]"
+                  >
+                    deg={wRow}
+                    {fRow > 0 ? ` (${fRow}f)` : ''}
+                  </text>
+                </g>
+              );
+            })}
 
-            return (
-              <g
-                key={`col-${colQubit}`}
-                onMouseEnter={() => setHoveredColIdx(npIdx)}
-                onMouseLeave={() => setHoveredColIdx(null)}
-                className="cursor-pointer"
-              >
-                {/* Physical black boundary wire to non-pivot qubit i */}
-                <line
-                  x1={layout.rightSpiderX}
-                  y1={cy}
-                  x2={layout.rightBoundaryX}
-                  y2={cy}
-                  stroke="#1e293b"
-                  strokeWidth={isHovered ? 2.8 : 2}
-                />
-                <circle
-                  cx={layout.rightBoundaryX}
-                  cy={cy}
-                  r={3.5}
-                  fill="#0f172a"
-                />
-                <text
-                  x={layout.rightBoundaryX + 10}
-                  y={cy + 4}
-                  textAnchor="start"
-                  className="fill-slate-700 font-mono text-[11px] font-semibold"
+            {/* 4. Diagonal Line 2: Non-Pivot Column Spiders */}
+            {nonPivots.map((colQubit, npIdx) => {
+              const p = layout.colPos(npIdx);
+              const wCol = cost.colWeights[colQubit] ?? 0;
+              const deg = wCol + 1;
+              const fCol = cost.colFlagsPerSpider[colQubit] ?? 0;
+              const isHovered = hoveredColIdx === npIdx;
+
+              return (
+                <g
+                  key={`col-node-${colQubit}`}
+                  onMouseEnter={() => setHoveredColIdx(npIdx)}
+                  onMouseLeave={() => setHoveredColIdx(null)}
+                  className="cursor-pointer"
                 >
-                  q_{colQubit}
-                </text>
+                  <circle
+                    cx={p.x}
+                    cy={p.y}
+                    r={isHovered ? 15 : 13}
+                    fill={colFill}
+                    stroke={colStroke}
+                    strokeWidth={isHovered ? 2.8 : 2}
+                  />
+                  <text
+                    x={p.x}
+                    y={p.y + 4}
+                    textAnchor="middle"
+                    fill={colText}
+                    className="font-mono text-[10.5px] font-bold"
+                  >
+                    {colSym}
+                    {npIdx}
+                  </text>
 
-                {/* Column Spider Circle */}
-                <circle
-                  cx={layout.rightSpiderX}
-                  cy={cy}
-                  r={isHovered ? 16 : 14}
-                  fill={colFill}
-                  stroke={colStroke}
-                  strokeWidth={isHovered ? 2.8 : 2}
-                />
-                <text
-                  x={layout.rightSpiderX}
-                  y={cy + 4}
-                  textAnchor="middle"
-                  fill={colText}
-                  className="font-mono text-[11px] font-bold"
-                >
-                  {colSym}
-                  {npIdx}
-                </text>
-
-                {/* Degree & Flag badge */}
-                <text
-                  x={layout.rightSpiderX + 20}
-                  y={cy - 10}
-                  textAnchor="start"
-                  className="fill-slate-500 font-mono text-[9.5px]"
-                >
-                  deg={deg}
-                  {fCol > 0 ? ` (${fCol}f)` : ''}
-                </text>
-              </g>
-            );
-          })}
-        </svg>
+                  {/* Degree & Flag badge */}
+                  <text
+                    x={p.x - 18}
+                    y={p.y + 3.5}
+                    textAnchor="end"
+                    className="fill-slate-500 font-mono text-[9.5px]"
+                  >
+                    deg={deg}
+                    {fCol > 0 ? ` (${fCol}f)` : ''}
+                  </text>
+                </g>
+              );
+            })}
+          </svg>
+        </div>
       </div>
 
       <div className="mt-2.5 flex items-center justify-between text-[11px] text-slate-500">
         <span>
-          Hover over any spider to inspect its incident bipartite edges and required{' '}
+          Hover over any spider on the two diagonals to highlight its incident edges and{' '}
           <KaTeXMath tex="t={}" />
           {t} flags.
         </span>
         <span className="font-mono text-slate-600">
-          Boundary legs: {numRows + numNonPivots} data qubits
+          State outputs: {totalQubits} right-hand boundary legs
         </span>
       </div>
     </div>

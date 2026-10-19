@@ -268,7 +268,8 @@ export function rowOptimizeMatrix(
   let bestPerm: number[] = [...identityPerm];
 
   const colsArr = Array.from({ length: c }, (_, i) => i);
-  const costHistory: number[] = [bestCost.totalCnots];
+  const costHistory: number[] = [initialCost.totalCnots];
+  let foundRandomEqualOrBetter = false;
 
   for (let trial = 0; trial < maxBasisTries; trial++) {
     rng.shuffle(colsArr);
@@ -284,10 +285,15 @@ export function rowOptimizeMatrix(
     const mNew = rrefK.map((row) => invCols.map((permIdx) => row[permIdx]));
     const trialCost = detailedCostBreakdown(mNew, t);
 
-    if (trialCost.totalCnots < bestCost.totalCnots) {
+    if (
+      trialCost.totalCnots < bestCost.totalCnots ||
+      (!foundRandomEqualOrBetter &&
+        trialCost.totalCnots <= bestCost.totalCnots)
+    ) {
       bestCost = trialCost;
       bestMatrix = mNew;
       bestPerm = [...colsArr];
+      foundRandomEqualOrBetter = true;
     }
     costHistory.push(bestCost.totalCnots);
   }

@@ -225,7 +225,7 @@ export const Phase1CodeSpec: React.FC = () => {
             className="block text-xs font-semibold text-slate-700 mb-1.5"
           >
             Distance <KaTeXMath tex="d" /> &amp; Faults{' '}
-            <KaTeXMath tex="t = \lfloor(d-1)/2\rfloor" />
+            <KaTeXMath tex="t = \lfloor d / 2 \rfloor" />
           </label>
           <div className="flex items-center gap-2">
             <input

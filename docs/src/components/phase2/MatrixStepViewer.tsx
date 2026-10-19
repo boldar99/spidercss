@@ -12,7 +12,6 @@ interface MatrixStepViewerProps {
   activeInputMatrix: BinaryMatrix;
   rrefSnapshot: RrefTrialSnapshot;
   stage: RrefWalkthroughStage;
-  rowOpStepIndex: number;
   t: number;
   basis: BasisType;
   onCustomPermutation?: (perm: number[]) => void;
@@ -22,7 +21,6 @@ export const MatrixStepViewer: React.FC<MatrixStepViewerProps> = ({
   activeInputMatrix,
   rrefSnapshot,
   stage,
-  rowOpStepIndex,
   t,
   basis,
   onCustomPermutation,
@@ -37,7 +35,7 @@ export const MatrixStepViewer: React.FC<MatrixStepViewerProps> = ({
     unpermutedMatrix,
   } = rrefSnapshot;
 
-  // Determine the displayed matrix, column qubit labels, and highlighted rows/pivots based on stage
+  // Determine the displayed matrix, column qubit labels, and highlighted pivots based on stage
   const displayData = useMemo(() => {
     const cols = activeInputMatrix[0]?.length ?? 0;
     const identityCols = Array.from({ length: cols }, (_, i) => i);
@@ -50,9 +48,6 @@ export const MatrixStepViewer: React.FC<MatrixStepViewerProps> = ({
         colLabels: identityCols,
         pivots,
         cost,
-        activePivotRow: null as number | null,
-        activeTargetRow: null as number | null,
-        activePivotCol: null as number | null,
         stageLabel: 'Input Parity Matrix M (with Permutation π)',
       };
     }
@@ -65,40 +60,19 @@ export const MatrixStepViewer: React.FC<MatrixStepViewerProps> = ({
         colLabels: permutation,
         pivots,
         cost,
-        activePivotRow: null,
-        activeTargetRow: null,
-        activePivotCol: null,
         stageLabel: 'Column-Permuted Matrix M[:, π]',
       };
     }
 
     if (stage === 3) {
-      const clampedStep = Math.max(
-        0,
-        Math.min(rowOpSteps.length, rowOpStepIndex)
-      );
-      const currentStepObj =
-        clampedStep > 0 ? rowOpSteps[clampedStep - 1] : null;
-      const mat =
-        clampedStep === 0
-          ? permutedMatrix
-          : clampedStep === rowOpSteps.length
-          ? rrefPermutedMatrix
-          : currentStepObj!.matrixAfter;
-      const { pivots } = findPivotsInMatrix(mat);
-      const cost = detailedCostBreakdown(mat, t);
+      const { pivots } = findPivotsInMatrix(rrefPermutedMatrix);
+      const cost = detailedCostBreakdown(rrefPermutedMatrix, t);
       return {
-        matrix: mat,
+        matrix: rrefPermutedMatrix,
         colLabels: permutation,
         pivots,
         cost,
-        activePivotRow: currentStepObj?.pivotRow ?? null,
-        activeTargetRow: currentStepObj?.targetRow ?? null,
-        activePivotCol: currentStepObj?.pivotCol ?? null,
-        stageLabel:
-          clampedStep === rowOpSteps.length
-            ? `RREF(M[:, π]) Complete (${rowOpSteps.length} row ops)`
-            : `Gaussian Elimination Step ${clampedStep} / ${rowOpSteps.length}`,
+        stageLabel: `Gaussian Elimination RREF(M[:, π]) (${rowOpSteps.length} row XORs applied)`,
       };
     }
 
@@ -108,9 +82,6 @@ export const MatrixStepViewer: React.FC<MatrixStepViewerProps> = ({
       colLabels: identityCols,
       pivots: rrefSnapshot.pivots,
       cost: rrefSnapshot.cost,
-      activePivotRow: null,
-      activeTargetRow: null,
-      activePivotCol: null,
       stageLabel: "Un-Permuted RREF Basis M' = RREF(M[:, π])[:, π⁻¹]",
     };
   }, [
@@ -118,24 +89,14 @@ export const MatrixStepViewer: React.FC<MatrixStepViewerProps> = ({
     permutedMatrix,
     permutation,
     rrefPermutedMatrix,
-    rowOpSteps,
-    rowOpStepIndex,
+    rowOpSteps.length,
     unpermutedMatrix,
     rrefSnapshot,
     stage,
     t,
   ]);
 
-  const {
-    matrix,
-    colLabels,
-    pivots,
-    cost,
-    activePivotRow,
-    activeTargetRow,
-    activePivotCol,
-    stageLabel,
-  } = displayData;
+  const { matrix, colLabels, pivots, cost, stageLabel } = displayData;
 
   const pivotColToRow = useMemo(() => {
     const map = new Map<number, number>();
@@ -232,14 +193,11 @@ export const MatrixStepViewer: React.FC<MatrixStepViewerProps> = ({
               <th className="py-1.5 pr-2 text-left font-normal">Row</th>
               {colLabels.map((qIdx, cIdx) => {
                 const isPivotCol = pivotColToRow.has(cIdx);
-                const isCurrentElimCol = activePivotCol === cIdx;
                 return (
                   <th
                     key={cIdx}
                     className={`px-1 py-1.5 text-center font-semibold min-w-[24px] rounded-t ${
-                      isCurrentElimCol
-                        ? 'bg-amber-100 text-amber-900'
-                        : isPivotCol
+                      isPivotCol
                         ? 'bg-emerald-100/70 text-emerald-900'
                         : 'text-slate-500'
                     }`}
@@ -266,8 +224,6 @@ export const MatrixStepViewer: React.FC<MatrixStepViewerProps> = ({
 
           <tbody className="divide-y divide-slate-100">
             {matrix.map((row, rIdx) => {
-              const isPivotRow = activePivotRow === rIdx;
-              const isTargetRow = activeTargetRow === rIdx;
               const wRow = cost.rowWeights[rIdx] ?? 0;
               const fRow = cost.rowFlagsPerSpider[rIdx] ?? 0;
               const pivotColForThisRow = pivots[rIdx];
@@ -275,13 +231,7 @@ export const MatrixStepViewer: React.FC<MatrixStepViewerProps> = ({
               return (
                 <tr
                   key={rIdx}
-                  className={`transition-colors ${
-                    isTargetRow
-                      ? 'bg-amber-100/80'
-                      : isPivotRow
-                      ? 'bg-indigo-100/70'
-                      : 'hover:bg-white/80'
-                  }`}
+                  className="transition-colors hover:bg-white/80"
                 >
                   <td className="py-1 pr-2 text-[11px] whitespace-nowrap">
                     <div className="flex items-center gap-1">
@@ -416,11 +366,6 @@ export const MatrixStepViewer: React.FC<MatrixStepViewerProps> = ({
             Non-Pivot 1 (Idealized bipartite edge)
           </span>
         </div>
-        {stage === 3 && activeTargetRow !== null && activePivotRow !== null && (
-          <span className="font-mono text-amber-800 bg-amber-100 px-2 py-0.5 rounded font-semibold">
-            R<sub>{activeTargetRow}</sub> ← R<sub>{activeTargetRow}</sub> ⊕ R<sub>{activePivotRow}</sub>
-          </span>
-        )}
       </div>
     </div>
   );

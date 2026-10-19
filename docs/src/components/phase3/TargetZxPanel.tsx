@@ -20,6 +20,7 @@ export const TargetZxPanel: React.FC<TargetZxPanelProps> = ({
   const { pivots, nonPivots, zSpiders, xSpiders, stepSnapshots } = pipeline;
   const numRows = zSpiders.length;
   const numNonPivots = nonPivots.length;
+  const totalQubits = numRows + numNonPivots;
   const totalSteps = stepSnapshots.length;
   const activeSnap =
     stepIndex > 0 && stepIndex <= totalSteps
@@ -34,21 +35,39 @@ export const TargetZxPanel: React.FC<TargetZxPanelProps> = ({
   const colStroke = basis === 'Z' ? '#b91c1c' : '#15803d';
   const colSym = basis === 'Z' ? 'X' : 'Z';
 
-  const maxNodesSide = Math.max(numRows, numNonPivots, 1);
-  const svgHeight = Math.max(250, Math.min(480, 70 + maxNodesSide * 42));
-  const topPad = 36;
-  const bottomPad = 36;
-  const usableH = svgHeight - topPad - bottomPad;
+  // Two diagonal lines of spiders with all boundary legs going to the right (ZX state)
+  const totalTracks = Math.max(2, totalQubits);
+  const stepY =
+    totalTracks > 24 ? 19 : totalTracks > 16 ? 24 : totalTracks > 10 ? 30 : 35;
+  const topPad = 32;
+  const bottomPad = 28;
+  const groupGapY = stepY * 0.55;
+  const svgHeight = Math.max(
+    260,
+    topPad +
+      bottomPad +
+      Math.max(0, numRows - 1) * stepY +
+      groupGapY +
+      Math.max(0, numNonPivots) * stepY
+  );
+  const rightBoundaryX = 330;
 
-  const getRowY = (rIdx: number) =>
-    numRows <= 1 ? svgHeight / 2 : topPad + (rIdx / (numRows - 1)) * usableH;
-  const getColY = (npIdx: number) =>
-    numNonPivots <= 1
-      ? svgHeight / 2
-      : topPad + (npIdx / (numNonPivots - 1)) * usableH;
+  const getRowPos = (rIdx: number) => {
+    const frac = numRows <= 1 ? 0.5 : rIdx / (numRows - 1);
+    return {
+      x: 52 + frac * 80,
+      y: topPad + rIdx * stepY,
+    };
+  };
 
-  const leftSpiderX = 96;
-  const rightSpiderX = 274;
+  const colBaseY = topPad + Math.max(1, numRows) * stepY + groupGapY;
+  const getColPos = (npIdx: number) => {
+    const frac = numNonPivots <= 1 ? 0.5 : npIdx / (numNonPivots - 1);
+    return {
+      x: 185 + frac * 90,
+      y: colBaseY + npIdx * stepY,
+    };
+  };
 
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-3.5 flex flex-col h-full">
@@ -59,7 +78,7 @@ export const TargetZxPanel: React.FC<TargetZxPanelProps> = ({
             Panel 1 • Edge Schedule
           </span>
           <h4 className="text-xs sm:text-sm font-bold text-slate-900">
-            Target Bipartite ZX-Diagram
+            Target Bipartite ZX-State
           </h4>
         </div>
         <span className="px-2 py-0.5 rounded-md font-mono text-[11px] font-semibold bg-slate-100 text-slate-800 border border-slate-200">
@@ -71,19 +90,81 @@ export const TargetZxPanel: React.FC<TargetZxPanelProps> = ({
         Click any <span className="font-semibold text-slate-700">dashed remaining edge</span> to schedule it next, or click an added edge to inspect that step.
       </p>
 
-      {/* SVG Bipartite Diagram */}
+      {/* SVG Bipartite State Diagram */}
       <div className="relative flex-1 flex items-center justify-center bg-slate-50/60 rounded-lg border border-slate-200/80 overflow-hidden">
         <svg
-          viewBox={`0 0 370 ${svgHeight}`}
-          className="w-full h-auto max-h-[420px] select-none"
+          viewBox={`0 0 380 ${svgHeight}`}
+          className="w-full h-auto max-h-[430px] select-none"
         >
-          {/* 1. Remaining Edges (drawn first so active/added sit on top) */}
+          {/* Output boundary wires (all exiting to the right) */}
+          {Array.from({ length: numRows }, (_, rIdx) => {
+            const p = getRowPos(rIdx);
+            const pivotQ = pivots[rIdx];
+            return (
+              <g key={`rw-${rIdx}`}>
+                <line
+                  x1={p.x}
+                  y1={p.y}
+                  x2={rightBoundaryX}
+                  y2={p.y}
+                  stroke="#cbd5e1"
+                  strokeWidth={1.6}
+                />
+                <circle
+                  cx={rightBoundaryX}
+                  cy={p.y}
+                  r={2.5}
+                  fill="#0f172a"
+                />
+                <text
+                  x={rightBoundaryX + 7}
+                  y={p.y + 3.5}
+                  textAnchor="start"
+                  className="font-mono text-[9.5px] font-semibold fill-slate-700"
+                >
+                  q_{pivotQ}
+                </text>
+              </g>
+            );
+          })}
+
+          {nonPivots.map((colQ, npIdx) => {
+            const p = getColPos(npIdx);
+            return (
+              <g key={`cw-${colQ}`}>
+                <line
+                  x1={p.x}
+                  y1={p.y}
+                  x2={rightBoundaryX}
+                  y2={p.y}
+                  stroke="#cbd5e1"
+                  strokeWidth={1.6}
+                />
+                <circle
+                  cx={rightBoundaryX}
+                  cy={p.y}
+                  r={2.5}
+                  fill="#0f172a"
+                />
+                <text
+                  x={rightBoundaryX + 7}
+                  y={p.y + 3.5}
+                  textAnchor="start"
+                  className="font-mono text-[9.5px] font-semibold fill-slate-700"
+                >
+                  q_{colQ}
+                </text>
+              </g>
+            );
+          })}
+
+          {/* 1. Remaining Edges */}
           {stepSnapshots.map((snap, idx) => {
             if (idx < stepIndex) return null;
-            const y1 = getRowY(snap.zSpiderIndex);
-            const y2 = getColY(snap.xSpiderIndex);
-            const mx = (leftSpiderX + rightSpiderX) / 2;
-            const my = (y1 + y2) / 2;
+            const p1 = getRowPos(snap.zSpiderIndex);
+            const p2 = getColPos(snap.xSpiderIndex);
+            const mx = (p1.x + p2.x) / 2;
+            const my = (p1.y + p2.y) / 2;
 
             return (
               <g
@@ -91,20 +172,19 @@ export const TargetZxPanel: React.FC<TargetZxPanelProps> = ({
                 onClick={() => onSelectRemainingEdge(snap.logicalEdge, idx)}
                 className="cursor-pointer group"
               >
-                {/* Invisible wider hit target */}
                 <line
-                  x1={leftSpiderX}
-                  y1={y1}
-                  x2={rightSpiderX}
-                  y2={y2}
+                  x1={p1.x}
+                  y1={p1.y}
+                  x2={p2.x}
+                  y2={p2.y}
                   stroke="transparent"
                   strokeWidth={12}
                 />
                 <line
-                  x1={leftSpiderX}
-                  y1={y1}
-                  x2={rightSpiderX}
-                  y2={y2}
+                  x1={p1.x}
+                  y1={p1.y}
+                  x2={p2.x}
+                  y2={p2.y}
                   stroke="#94a3b8"
                   strokeWidth={1.9}
                   strokeDasharray="5,4"
@@ -130,11 +210,11 @@ export const TargetZxPanel: React.FC<TargetZxPanelProps> = ({
           {/* 2. Already Added Edges (idx < stepIndex - 1) */}
           {stepSnapshots.map((snap, idx) => {
             if (idx >= stepIndex - 1) return null;
-            const y1 = getRowY(snap.zSpiderIndex);
-            const y2 = getColY(snap.xSpiderIndex);
-            const tPos = 0.36 + ((idx % 5) * 0.07);
-            const bx = leftSpiderX + (rightSpiderX - leftSpiderX) * tPos;
-            const by = y1 + (y2 - y1) * tPos;
+            const p1 = getRowPos(snap.zSpiderIndex);
+            const p2 = getColPos(snap.xSpiderIndex);
+            const tPos = 0.35 + (idx % 5) * 0.08;
+            const bx = p1.x + (p2.x - p1.x) * tPos;
+            const by = p1.y + (p2.y - p1.y) * tPos;
 
             return (
               <g
@@ -143,20 +223,20 @@ export const TargetZxPanel: React.FC<TargetZxPanelProps> = ({
                 className="cursor-pointer group"
               >
                 <line
-                  x1={leftSpiderX}
-                  y1={y1}
-                  x2={rightSpiderX}
-                  y2={y2}
+                  x1={p1.x}
+                  y1={p1.y}
+                  x2={p2.x}
+                  y2={p2.y}
                   stroke="transparent"
                   strokeWidth={10}
                 />
                 <line
-                  x1={leftSpiderX}
-                  y1={y1}
-                  x2={rightSpiderX}
-                  y2={y2}
+                  x1={p1.x}
+                  y1={p1.y}
+                  x2={p2.x}
+                  y2={p2.y}
                   stroke="#0f172a"
-                  strokeWidth={2.3}
+                  strokeWidth={2.2}
                   strokeOpacity={0.82}
                   className="group-hover:stroke-emerald-600 transition-colors"
                 />
@@ -181,103 +261,85 @@ export const TargetZxPanel: React.FC<TargetZxPanelProps> = ({
           })}
 
           {/* 3. Active Edge (idx === stepIndex - 1) */}
-          {activeSnap && (() => {
-            const y1 = getRowY(activeSnap.zSpiderIndex);
-            const y2 = getColY(activeSnap.xSpiderIndex);
-            const mx = (leftSpiderX + rightSpiderX) / 2;
-            const my = (y1 + y2) / 2;
+          {activeSnap &&
+            (() => {
+              const p1 = getRowPos(activeSnap.zSpiderIndex);
+              const p2 = getColPos(activeSnap.xSpiderIndex);
+              const mx = (p1.x + p2.x) / 2;
+              const my = (p1.y + p2.y) / 2;
 
-            return (
-              <g key="active-edge">
-                <line
-                  x1={leftSpiderX}
-                  y1={y1}
-                  x2={rightSpiderX}
-                  y2={y2}
-                  stroke="#fde68a"
-                  strokeWidth={9}
-                  strokeLinecap="round"
-                />
-                <line
-                  x1={leftSpiderX}
-                  y1={y1}
-                  x2={rightSpiderX}
-                  y2={y2}
-                  stroke="#d97706"
-                  strokeWidth={3.6}
-                  strokeLinecap="round"
-                />
-                <rect
-                  x={mx - 14}
-                  y={my - 9}
-                  width={28}
-                  height={18}
-                  rx={5}
-                  fill="#d97706"
-                  stroke="#ffffff"
-                  strokeWidth={1.5}
-                />
-                <text
-                  x={mx}
-                  y={my + 3.5}
-                  textAnchor="middle"
-                  className="font-mono text-[9.5px] font-bold fill-white"
-                >
-                  #{stepIndex}
-                </text>
-              </g>
-            );
-          })()}
+              return (
+                <g key="active-edge">
+                  <line
+                    x1={p1.x}
+                    y1={p1.y}
+                    x2={p2.x}
+                    y2={p2.y}
+                    stroke="#fde68a"
+                    strokeWidth={8.5}
+                    strokeLinecap="round"
+                  />
+                  <line
+                    x1={p1.x}
+                    y1={p1.y}
+                    x2={p2.x}
+                    y2={p2.y}
+                    stroke="#d97706"
+                    strokeWidth={3.5}
+                    strokeLinecap="round"
+                  />
+                  <rect
+                    x={mx - 14}
+                    y={my - 9}
+                    width={28}
+                    height={18}
+                    rx={5}
+                    fill="#d97706"
+                    stroke="#ffffff"
+                    strokeWidth={1.5}
+                  />
+                  <text
+                    x={mx}
+                    y={my + 3.5}
+                    textAnchor="middle"
+                    className="font-mono text-[9.5px] font-bold fill-white"
+                  >
+                    #{stepIndex}
+                  </text>
+                </g>
+              );
+            })()}
 
-          {/* 4. Left Row Spiders */}
+          {/* 4. Diagonal Line 1: Row Spiders */}
           {Array.from({ length: numRows }, (_, rIdx) => {
-            const cy = getRowY(rIdx);
+            const p = getRowPos(rIdx);
             const isActiveRow = activeSnap?.zSpiderIndex === rIdx;
-            const pivotQ = pivots[rIdx];
 
             return (
               <g key={`row-${rIdx}`}>
-                {/* Boundary wire to pivot qubit */}
-                <line
-                  x1={38}
-                  y1={cy}
-                  x2={leftSpiderX}
-                  y2={cy}
-                  stroke="#1e293b"
-                  strokeWidth={2}
-                />
-                <text
-                  x={32}
-                  y={cy + 3.5}
-                  textAnchor="end"
-                  className="font-mono text-[10px] font-semibold fill-slate-700"
-                >
-                  q_{pivotQ}
-                </text>
-
                 {isActiveRow && (
                   <circle
-                    cx={leftSpiderX}
-                    cy={cy}
-                    r={17}
+                    cx={p.x}
+                    cy={p.y}
+                    r={16.5}
                     fill="none"
                     stroke="#f59e0b"
                     strokeWidth={3}
                   />
                 )}
                 <circle
-                  cx={leftSpiderX}
-                  cy={cy}
-                  r={12.5}
+                  cx={p.x}
+                  cy={p.y}
+                  r={12}
                   fill={rowFill}
                   stroke={rowStroke}
                   strokeWidth={2}
                 />
                 <text
-                  x={leftSpiderX}
-                  y={cy + 3.5}
+                  x={p.x}
+                  y={p.y + 3.5}
                   textAnchor="middle"
-                  className="font-mono text-[10px] font-bold fill-slate-900"
+                  className="font-mono text-[9.5px] font-bold fill-slate-900"
                 >
                   {rowSym}
                   {rIdx}
@@ -286,64 +348,46 @@ export const TargetZxPanel: React.FC<TargetZxPanelProps> = ({
             );
           })}
 
-          {/* 5. Right Non-Pivot Column Spiders */}
+          {/* 5. Diagonal Line 2: Non-Pivot Column Spiders */}
           {nonPivots.map((colQ, npIdx) => {
-            const cy = getColY(npIdx);
+            const p = getColPos(npIdx);
             const isActiveCol = activeSnap?.xSpiderIndex === npIdx;
             const chunks = xSpiders[npIdx] ?? [];
             const isSplit = chunks.length > 1;
 
             return (
               <g key={`col-${colQ}`}>
-                {/* Boundary wire to non-pivot qubit */}
-                <line
-                  x1={rightSpiderX}
-                  y1={cy}
-                  x2={332}
-                  y2={cy}
-                  stroke="#1e293b"
-                  strokeWidth={2}
-                />
-                <text
-                  x={338}
-                  y={cy + 3.5}
-                  textAnchor="start"
-                  className="font-mono text-[10px] font-semibold fill-slate-700"
-                >
-                  q_{colQ}
-                </text>
-
                 {isActiveCol && (
                   <circle
-                    cx={rightSpiderX}
-                    cy={cy}
-                    r={17}
+                    cx={p.x}
+                    cy={p.y}
+                    r={16.5}
                     fill="none"
                     stroke="#f59e0b"
                     strokeWidth={3}
                   />
                 )}
                 <circle
-                  cx={rightSpiderX}
-                  cy={cy}
-                  r={12.5}
+                  cx={p.x}
+                  cy={p.y}
+                  r={12}
                   fill={colFill}
                   stroke={colStroke}
                   strokeWidth={2}
                 />
                 <text
-                  x={rightSpiderX}
-                  y={cy + 3.5}
+                  x={p.x}
+                  y={p.y + 3.5}
                   textAnchor="middle"
-                  className="font-mono text-[10px] font-bold fill-slate-900"
+                  className="font-mono text-[9.5px] font-bold fill-slate-900"
                 >
                   {colSym}
                   {npIdx}
                 </text>
                 {isSplit && (
                   <text
-                    x={rightSpiderX}
-                    y={cy - 15}
+                    x={p.x}
+                    y={p.y - 14}
                     textAnchor="middle"
                     className="font-mono text-[8.5px] font-bold fill-purple-800"
                   >
