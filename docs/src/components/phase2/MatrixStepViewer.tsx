@@ -156,7 +156,7 @@ export const MatrixStepViewer: React.FC<MatrixStepViewerProps> = ({
             Column Permutation <KaTeXMath tex="\pi" />:
           </span>
           <span className="text-slate-400">[</span>
-          {permutation.slice(0, 24).map((qIdx, pos) => (
+          {permutation.slice(0, 48).map((qIdx, pos) => (
             <button
               key={pos}
               type="button"
@@ -173,7 +173,7 @@ export const MatrixStepViewer: React.FC<MatrixStepViewerProps> = ({
               q<sub>{qIdx}</sub>
             </button>
           ))}
-          {permutation.length > 24 && (
+          {permutation.length > 48 && (
             <span className="text-slate-400">… ({permutation.length} cols)</span>
           )}
           <span className="text-slate-400">]</span>

@@ -35,48 +35,47 @@ export const TargetZxPanel: React.FC<TargetZxPanelProps> = ({
   const colStroke = basis === 'Z' ? '#b91c1c' : '#15803d';
   const colSym = basis === 'Z' ? 'X' : 'Z';
 
-  // Two parallel diagonal lines of spiders spanning the same horizontal space,
-  // with all boundary legs going to the right (ZX state)
-  const totalTracks = Math.max(2, totalQubits);
+  // Two vertical bipartite columns of spiders (Row spiders on left/top band, Col spiders on right/bottom band),
+  // with all boundary legs going horizontally to the right (ZX state)
   const stepY =
-    totalTracks > 24 ? 19 : totalTracks > 16 ? 24 : totalTracks > 10 ? 29 : 34;
-  const topPad = 36;
-  const bottomPad = 28;
-  const groupGapY = Math.max(36, stepY * 1.2);
+    totalQubits <= 8
+      ? 58
+      : totalQubits <= 14
+      ? 50
+      : totalQubits <= 22
+      ? 42
+      : 36;
+  const topPad = 54;
+  const bottomPad = 48;
+  const groupGapY = totalQubits <= 8 ? 64 : 52;
   const svgHeight = Math.max(
-    240,
+    480,
     topPad +
       bottomPad +
       Math.max(0, numRows - 1) * stepY +
       groupGapY +
-      Math.max(0, numNonPivots) * stepY
+      Math.max(0, numNonPivots - 1) * stepY
   );
-  const svgWidth = 680;
-  const diagStartX = 110;
-  const diagEndX = 470;
-  const rightBoundaryX = 595;
+  const svgWidth = 760;
+  const rowX = 185;
+  const colX = 485;
+  const rightBoundaryX = 665;
 
-  const getRowPos = (rIdx: number) => {
-    const frac = numRows <= 1 ? 0.5 : rIdx / (numRows - 1);
-    return {
-      x: diagStartX + frac * (diagEndX - diagStartX),
-      y: topPad + rIdx * stepY,
-    };
-  };
+  const getRowPos = (rIdx: number) => ({
+    x: rowX,
+    y: topPad + rIdx * stepY,
+  });
 
   const colBaseY = topPad + Math.max(0, numRows - 1) * stepY + groupGapY;
-  const getColPos = (npIdx: number) => {
-    const frac = numNonPivots <= 1 ? 0.5 : npIdx / (numNonPivots - 1);
-    return {
-      x: diagStartX + frac * (diagEndX - diagStartX),
-      y: colBaseY + npIdx * stepY,
-    };
-  };
+  const getColPos = (npIdx: number) => ({
+    x: colX,
+    y: colBaseY + npIdx * stepY,
+  });
 
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-4 flex flex-col">
       {/* Panel Header */}
-      <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-2.5">
         <div>
           <span className="text-[11px] font-mono uppercase tracking-wider font-bold text-slate-500">
             Panel 1 • Edge Schedule
@@ -95,13 +94,45 @@ export const TargetZxPanel: React.FC<TargetZxPanelProps> = ({
         </div>
       </div>
 
-      {/* SVG Bipartite State Diagram */}
-      <div className="relative bg-slate-50/60 rounded-lg border border-slate-200/80 overflow-auto max-h-[420px] custom-scrollbar">
-        <svg
-          viewBox={`0 0 ${svgWidth} ${svgHeight}`}
-          className="w-full max-w-[820px] mx-auto h-auto select-none block"
-        >
-          {/* Output boundary wires (all exiting to the right) */}
+      {/* SVG Bipartite State Diagram (grows vertically up to 1:1 square, then scrolls) */}
+      <div className="square-panel-wrapper">
+        <div className="square-panel-scroll custom-scrollbar relative bg-slate-50/60 rounded-lg border border-slate-200/80">
+          <svg
+            viewBox={`0 0 ${svgWidth} ${svgHeight}`}
+            style={{
+              width: '100%',
+              minWidth: '560px',
+              height: `${svgHeight}px`,
+            }}
+            className="select-none block"
+          >
+            {/* Column Headers */}
+            <text
+              x={rowX}
+              y={22}
+              textAnchor="middle"
+              className="fill-slate-700 text-[11px] font-sans font-semibold"
+            >
+              Row {rowSym}-Spiders
+            </text>
+            <text
+              x={colX}
+              y={colBaseY - 20}
+              textAnchor="middle"
+              className="fill-slate-700 text-[11px] font-sans font-semibold"
+            >
+              Col {colSym}-Spiders
+            </text>
+            <text
+              x={rightBoundaryX}
+              y={22}
+              textAnchor="middle"
+              className="fill-slate-500 text-[10.5px] font-mono font-semibold"
+            >
+              Output Legs (q_0..q_{totalQubits - 1})
+            </text>
+
+            {/* Output boundary wires (all exiting to the right) */}
           {Array.from({ length: numRows }, (_, rIdx) => {
             const p = getRowPos(rIdx);
             const pivotQ = pivots[rIdx];
@@ -402,7 +433,8 @@ export const TargetZxPanel: React.FC<TargetZxPanelProps> = ({
               </g>
             );
           })}
-        </svg>
+          </svg>
+        </div>
       </div>
 
       {/* Legend & Quick Edge Sequence Pills */}

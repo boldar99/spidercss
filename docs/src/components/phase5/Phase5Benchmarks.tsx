@@ -23,6 +23,7 @@ import type {
   SimulationSummaryPayload,
 } from '../../engine/types';
 import { LerComparisonPlot } from './LerComparisonPlot';
+import { LogicalKet } from '../common/Math';
 
 const SIMULATION_SUMMARY =
   simulationSummaryRaw as unknown as SimulationSummaryPayload;
@@ -73,11 +74,8 @@ function cleanLabel(label: string): string {
   return (label || '').replace(/\\@/g, '').trim();
 }
 
-function formatStateLabel(basis: 'Z' | 'X', k: number): string {
-  const sym = basis === 'X' ? '+̄' : '0̄';
-  if (k <= 1) return `|${sym}⟩`;
-  if (k <= 3) return `|${sym.repeat(k)}⟩`;
-  return `|${sym}⟩^⊗${k}`;
+function formatStateLabel(basis: 'Z' | 'X', k: number): React.ReactNode {
+  return <LogicalKet basis={basis} k={k} />;
 }
 
 function formatLerInterval(

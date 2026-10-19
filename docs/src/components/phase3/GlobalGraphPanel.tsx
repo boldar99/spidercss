@@ -1,10 +1,11 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
+import { ZoomIn, ZoomOut, Maximize2 } from 'lucide-react';
 import type { BasisType } from '../../engine/types';
 import {
+  computeCatStateTreeLayout,
   getUndirectedDegree,
   getUndirectedEdges,
   hasUndirectedEdge,
-  topologicalGenerations,
 } from '../../engine/catState';
 import {
   nodeMapKey,
@@ -48,6 +49,8 @@ export const GlobalGraphPanel: React.FC<GlobalGraphPanelProps> = ({
     stepSnapshots,
   } = pipeline;
 
+  const [zoom, setZoom] = useState<number | null>(null);
+
   const activeSnap =
     stepIndex > 0 && stepIndex <= stepSnapshots.length
       ? stepSnapshots[stepIndex - 1]
@@ -61,8 +64,9 @@ export const GlobalGraphPanel: React.FC<GlobalGraphPanelProps> = ({
   const colStroke = basis === 'Z' ? '#b91c1c' : '#15803d';
   const colSym = basis === 'Z' ? 'X' : 'Z';
 
-  // Compute deterministic cluster layout for Z cat states (upper diagonal) and X cat states (lower diagonal)
-  // spanning the same horizontal space, with all physical data-qubit wires exiting to the right (state diagram)
+  // Compute deterministic tree-branch cluster layout matching Figure 6 (building-G-and-D.tikz):
+  // Z cat states on the left (upper band), X cat states on the right (lower band),
+  // with all physical data-qubit wires exiting horizontally to the right boundary.
   const layout = useMemo(() => {
     const posMap = new Map<number, NodePosition>();
     const clusterBoxes: Array<{
@@ -88,122 +92,124 @@ export const GlobalGraphPanel: React.FC<GlobalGraphPanelProps> = ({
       }
     }
 
-    // Helper to position nodes inside one CatState cluster box (layers always flow left-to-right toward the right state boundary)
+    const colStepX = 58;
+    const rowStepY = 48;
+    const padLeft = 36;
+    const padRight = 36;
+    const padTop = 38;
+    const padBottom = 34;
+    const gapY = 16;
+
+    const zLayouts = zStates.map((st) => computeCatStateTreeLayout(st));
+    const xLayouts = xStates.map((st) => computeCatStateTreeLayout(st));
+
     const placeCluster = (
       kind: 'Z' | 'X',
       compIdx: number,
-      state: (typeof zStates)[number],
+      treeGrid: ReturnType<typeof computeCatStateTreeLayout>,
       mapping: Map<string, number>,
       qubitCol: number,
       boxX: number,
-      boxY: number,
-      boxW: number,
-      boxH: number
+      boxY: number
     ) => {
-      const gens = topologicalGenerations(state.D);
-      const numLayers = Math.max(1, gens.length);
-      const padX = 28;
-      const padY = 24;
-      const innerW = Math.max(20, boxW - 2 * padX);
-      const innerH = Math.max(20, boxH - 2 * padY);
-
-      gens.forEach((layer, lIdx) => {
-        const fracX =
-          numLayers === 1 ? 0.5 : lIdx / Math.max(1, numLayers - 1);
-        const x = boxX + padX + fracX * innerW;
-
-        layer.forEach((localId, nIdx) => {
-          const fracY =
-            layer.length === 1
-              ? 0.5
-              : nIdx / Math.max(1, layer.length - 1);
-          let y = boxY + padY + fracY * innerH;
-          if (
-            state.G.nodes.size >= 4 &&
-            layer.length === 1 &&
-            lIdx > 0 &&
-            lIdx < numLayers - 1
-          ) {
-            y += lIdx % 2 === 1 ? -14 : 14;
-          }
-
-          const globalId = mapping.get(nodeMapKey(compIdx, localId))!;
-          posMap.set(globalId, {
-            x,
-            y,
-            compKind: kind,
-            compIndex: compIdx,
-            localId,
-            isRoot: rootGlobalToCol.has(globalId),
-            rootTreeCol: rootGlobalToCol.get(globalId) ?? null,
-            isPrimaryExit: exitGlobalToCol.has(globalId),
-            dataQubitCol: qubitCol,
-          });
+      for (const [localId, cell] of treeGrid.coords.entries()) {
+        const globalId = mapping.get(nodeMapKey(compIdx, localId));
+        if (globalId === undefined) continue;
+        const x = boxX + padLeft + cell.col * colStepX;
+        const y = boxY + padTop + cell.row * rowStepY;
+        posMap.set(globalId, {
+          x,
+          y,
+          compKind: kind,
+          compIndex: compIdx,
+          localId,
+          isRoot: rootGlobalToCol.has(globalId),
+          rootTreeCol: rootGlobalToCol.get(globalId) ?? null,
+          isPrimaryExit: exitGlobalToCol.has(globalId),
+          dataQubitCol: qubitCol,
         });
-      });
+      }
     };
 
-    const clusterW = 160;
-    const diagStartX = 28;
-    const diagEndX = 280;
-    const rightBoundaryX = 485;
-    const svgWidth = 545;
-    const gapY = 12;
+    const leftBoundaryX = 32;
+    const leftColX = 76;
+    let cursorY_Z = 28;
+    let maxZRightX = leftColX + 130;
 
-    // Diagonal 1 (Upper Band): Row Z Cat States
-    let cursorY = 20;
-    zStates.forEach((st, i) => {
-      const nCount = st.G.nodes.size;
-      const h = nCount <= 2 ? 62 : nCount <= 4 ? 86 : 108;
+    // Left Column: Row Cat States (Z for |0̄⟩, X for |+̄⟩)
+    zStates.forEach((_, i) => {
+      const treeGrid = zLayouts[i];
+      const boxW = Math.max(
+        110,
+        padLeft + Math.max(0, treeGrid.numCols - 1) * colStepX + padRight
+      );
+      const boxH =
+        padTop + Math.max(0, treeGrid.numRows - 1) * rowStepY + padBottom;
       const qCol = pivots[i];
-      const frac = zStates.length <= 1 ? 0.5 : i / (zStates.length - 1);
-      const boxX = diagStartX + frac * (diagEndX - diagStartX);
 
       clusterBoxes.push({
         kind: 'Z',
         index: i,
         label: `${rowSym}_${i} (q_${qCol})`,
         qubitCol: qCol,
-        x: boxX,
-        y: cursorY,
-        w: clusterW,
-        h,
+        x: leftColX,
+        y: cursorY_Z,
+        w: boxW,
+        h: boxH,
       });
-      placeCluster('Z', i, st, zNodeMapping, qCol, boxX, cursorY, clusterW, h);
-      cursorY += h + gapY;
+      placeCluster('Z', i, treeGrid, zNodeMapping, qCol, leftColX, cursorY_Z);
+      if (leftColX + boxW > maxZRightX) {
+        maxZRightX = leftColX + boxW;
+      }
+      cursorY_Z += boxH + gapY;
     });
 
-    // Gap between Upper Diagonal (Row Cat States) and Lower Diagonal (Col Cat States)
-    cursorY += 16;
+    // Central CNOT routing channel separates Left Column (Z) and Right Column (X) side-by-side
+    const rightColX = maxZRightX + 175;
+    let cursorY_X = 28;
+    let maxXRightX = rightColX + 130;
 
-    // Diagonal 2 (Lower Band, same horizontal span): Non-Pivot Col X Cat States
-    xStates.forEach((st, j) => {
-      const nCount = st.G.nodes.size;
-      const h = nCount <= 2 ? 62 : nCount <= 4 ? 86 : 108;
+    // Right Column: Non-Pivot Column Cat States (X for |0̄⟩, Z for |+̄⟩)
+    xStates.forEach((_, j) => {
+      const treeGrid = xLayouts[j];
+      const boxW = Math.max(
+        110,
+        padLeft + Math.max(0, treeGrid.numCols - 1) * colStepX + padRight
+      );
+      const boxH =
+        padTop + Math.max(0, treeGrid.numRows - 1) * rowStepY + padBottom;
       const qCol = nonPivots[j];
-      const frac = xStates.length <= 1 ? 0.5 : j / (xStates.length - 1);
-      const boxX = diagStartX + frac * (diagEndX - diagStartX);
 
       clusterBoxes.push({
         kind: 'X',
         index: j,
         label: `${colSym}_${j} (q_${qCol})`,
         qubitCol: qCol,
-        x: boxX,
-        y: cursorY,
-        w: clusterW,
-        h,
+        x: rightColX,
+        y: cursorY_X,
+        w: boxW,
+        h: boxH,
       });
-      placeCluster('X', j, st, xNodeMapping, qCol, boxX, cursorY, clusterW, h);
-      cursorY += h + gapY;
+      placeCluster('X', j, treeGrid, xNodeMapping, qCol, rightColX, cursorY_X);
+      if (rightColX + boxW > maxXRightX) {
+        maxXRightX = rightColX + boxW;
+      }
+      cursorY_X += boxH + gapY;
     });
 
-    const totalHeight = Math.max(280, cursorY + 14);
+    const rightBoundaryX = maxXRightX + 44;
+    const svgWidth = Math.max(760, rightBoundaryX + 54);
+    const totalHeight = Math.max(
+      460,
+      Math.max(cursorY_Z, cursorY_X) + 24
+    );
 
     return {
       posMap,
       clusterBoxes,
+      leftBoundaryX,
       rightBoundaryX,
+      rowStepY,
       svgWidth,
       svgHeight: totalHeight,
     };
@@ -252,248 +258,339 @@ export const GlobalGraphPanel: React.FC<GlobalGraphPanelProps> = ({
     [baseGlobalG]
   );
 
+  const effectiveZoom = zoom ?? 1;
+
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-3.5 flex flex-col h-full">
+    <div className="rounded-xl border border-slate-200 bg-white p-4 flex flex-col">
       {/* Header */}
-      <div className="flex items-center justify-between gap-2 mb-2">
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
         <div>
           <span className="text-[11px] font-mono uppercase tracking-wider font-bold text-slate-500">
-            Panel 2 • 3-Ary Spider State Network
+            3-Ary Spider State Network
           </span>
           <h4 className="text-xs sm:text-sm font-bold text-slate-900">
             Global Graph <code className="font-mono text-xs">G_global</code> &amp; Spanning Forest <code className="font-mono text-xs">F</code>
           </h4>
         </div>
-        <span className="px-2 py-0.5 rounded-md font-mono text-[11px] font-semibold bg-blue-50 text-blue-800 border border-blue-200">
-          {baseGlobalG.nodes.size} spiders • {Object.keys(globalRoots).length} roots
-        </span>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="px-2.5 py-0.5 rounded-md font-mono text-[11px] font-semibold bg-blue-50 text-blue-800 border border-blue-200">
+            {baseGlobalG.nodes.size} spiders • {Object.keys(globalRoots).length} roots
+          </span>
+
+          {/* Zoom Controls */}
+          <div className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 p-0.5 text-[11px] font-mono">
+            <button
+              type="button"
+              onClick={() =>
+                setZoom((z) =>
+                  Math.max(0.4, Number(((z ?? 1) - 0.2).toFixed(2)))
+                )
+              }
+              title="Zoom Out"
+              className="p-1 rounded hover:bg-white text-slate-700 cursor-pointer"
+            >
+              <ZoomOut className="w-3.5 h-3.5" />
+            </button>
+            <button
+              type="button"
+              onClick={() => setZoom(1)}
+              title="Reset to 100% scale"
+              className="px-1.5 py-0.5 rounded hover:bg-white text-slate-700 cursor-pointer"
+            >
+              {zoom === null ? 'Fit' : `${Math.round(effectiveZoom * 100)}%`}
+            </button>
+            <button
+              type="button"
+              onClick={() =>
+                setZoom((z) =>
+                  Math.min(2.5, Number(((z ?? 1) + 0.2).toFixed(2)))
+                )
+              }
+              title="Zoom In"
+              className="p-1 rounded hover:bg-white text-slate-700 cursor-pointer"
+            >
+              <ZoomIn className="w-3.5 h-3.5" />
+            </button>
+            {zoom !== null && (
+              <button
+                type="button"
+                onClick={() => setZoom(null)}
+                title="Fit to panel width"
+                className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 cursor-pointer"
+              >
+                <Maximize2 className="w-3 h-3" /> Fit
+              </button>
+            )}
+          </div>
+        </div>
       </div>
 
       <p className="text-[11px] text-slate-500 mb-2.5">
-        Each spider is unfused into a 3-ary <code className="font-mono">Cat_w^t</code> subgraph with its physical output leg exiting on the right. Bold edges form spanning forest <code className="font-mono">F</code> from roots <code className="font-mono">r_k</code> (blue boxes).
+        Each spider is unfused into a 3-ary cat-state subgraph. Pivot data qubits exit to the left; non-pivot data qubits exit to the right. Matched external CNOT edges span the central routing channel. Bold edges form spanning forest <code className="font-mono">F</code> from roots <code className="font-mono">r_k</code> (blue boxes).
       </p>
 
-      {/* SVG Canvas (block overflow container so top is never clipped) */}
-      <div className="relative flex-1 bg-slate-50/60 rounded-lg border border-slate-200/80 overflow-auto max-h-[500px] custom-scrollbar">
-        <svg
-          viewBox={`0 0 ${layout.svgWidth} ${layout.svgHeight}`}
-          className="w-full h-auto select-none block"
-        >
-          {/* 1. Cat State Cluster Bounding Boxes */}
-          {layout.clusterBoxes.map((box) => (
-            <g key={`${box.kind}-${box.index}`}>
-              <rect
-                x={box.x}
-                y={box.y}
-                width={box.w}
-                height={box.h}
-                rx={10}
-                fill={box.kind === 'Z' ? '#f0fdf4' : '#fff1f2'}
-                fillOpacity={0.6}
-                stroke={box.kind === 'Z' ? '#bbf7d0' : '#fecdd3'}
-                strokeWidth={1.2}
-              />
-              <text
-                x={box.x + 8}
-                y={box.y + 13}
-                textAnchor="start"
-                className="font-mono text-[9.5px] font-bold fill-slate-600"
-              >
-                {box.label}
-              </text>
-            </g>
-          ))}
-
-          {/* 2. Physical Data Qubit Boundary Wires from Primary Exit Spiders (All exiting to the right as a ZX state) */}
-          {Array.from(layout.posMap.entries()).map(([gId, pos]) => {
-            if (!pos.isPrimaryExit) return null;
-
-            return (
-              <g key={`exit-${gId}`}>
-                <line
-                  x1={pos.x}
-                  y1={pos.y}
-                  x2={layout.rightBoundaryX}
-                  y2={pos.y}
-                  stroke="#334155"
-                  strokeWidth={1.8}
-                  strokeOpacity={0.8}
-                />
-                <circle
-                  cx={layout.rightBoundaryX}
-                  cy={pos.y}
-                  r={2.8}
-                  fill="#0f172a"
+      {/* SVG Canvas (grows vertically up to 1:1 square, then scrolls) */}
+      <div className="square-panel-wrapper">
+        <div className="square-panel-scroll custom-scrollbar relative bg-slate-50/60 rounded-lg border border-slate-200/80">
+          <svg
+            viewBox={`0 0 ${layout.svgWidth} ${layout.svgHeight}`}
+            style={
+              zoom === null
+                ? {
+                    width: '100%',
+                    minWidth: `${Math.min(680, layout.svgWidth)}px`,
+                    height: `${layout.svgHeight}px`,
+                  }
+                : {
+                    width: `${Math.round(layout.svgWidth * zoom)}px`,
+                    height: `${Math.round(layout.svgHeight * zoom)}px`,
+                  }
+            }
+            className="select-none block mx-auto"
+          >
+            {/* 1. Cat State Cluster Bounding Boxes */}
+            {layout.clusterBoxes.map((box) => (
+              <g key={`${box.kind}-${box.index}`}>
+                <rect
+                  x={box.x}
+                  y={box.y}
+                  width={box.w}
+                  height={box.h}
+                  rx={12}
+                  fill={box.kind === 'Z' ? '#f0fdf4' : '#fff1f2'}
+                  fillOpacity={0.68}
+                  stroke={box.kind === 'Z' ? '#86efac' : '#fda4af'}
+                  strokeWidth={1.4}
                 />
                 <text
-                  x={layout.rightBoundaryX + 7}
-                  y={pos.y + 3.5}
+                  x={box.x + 12}
+                  y={box.y + 16}
                   textAnchor="start"
-                  className="font-mono text-[9.5px] font-semibold fill-slate-700"
+                  className="font-mono text-[10.5px] font-bold fill-slate-700"
                 >
-                  q_{pos.dataQubitCol}
+                  {box.label}
                 </text>
               </g>
-            );
-          })}
+            ))}
 
-          {/* 3. Internal Edges of baseGlobalG (bold for Spanning Forest F, dashed for non-tree flag closure) */}
-          {internalEdges.map((e, idx) => {
-            const p1 = layout.posMap.get(e.source);
-            const p2 = layout.posMap.get(e.target);
-            if (!p1 || !p2) return null;
-            const inForest = hasUndirectedEdge(globalF, e.source, e.target);
+            {/* 2. Physical Data Qubit Boundary Wires from Primary Exit Spiders (Pivot qubits on left, non-pivot on right) */}
+            {Array.from(layout.posMap.entries()).map(([gId, pos]) => {
+              if (!pos.isPrimaryExit) return null;
+              const isZ = pos.compKind === 'Z';
+              const boundaryX = isZ
+                ? layout.leftBoundaryX
+                : layout.rightBoundaryX;
 
-            return (
-              <line
-                key={`int-${idx}`}
-                x1={p1.x}
-                y1={p1.y}
-                x2={p2.x}
-                y2={p2.y}
-                stroke={inForest ? '#0f172a' : '#64748b'}
-                strokeWidth={inForest ? 3.2 : 1.8}
-                strokeDasharray={inForest ? undefined : '4,3'}
-              />
-            );
-          })}
+              return (
+                <g key={`exit-${gId}`}>
+                  <line
+                    x1={pos.x}
+                    y1={pos.y}
+                    x2={boundaryX}
+                    y2={pos.y}
+                    stroke="#334155"
+                    strokeWidth={1.9}
+                    strokeOpacity={0.85}
+                  />
+                  <circle
+                    cx={boundaryX}
+                    cy={pos.y}
+                    r={3.2}
+                    fill="#0f172a"
+                  />
+                  <text
+                    x={isZ ? boundaryX - 8 : boundaryX + 8}
+                    y={pos.y + 3.5}
+                    textAnchor={isZ ? 'end' : 'start'}
+                    className={`font-mono text-[10.5px] font-bold ${
+                      isZ ? 'fill-emerald-800' : 'fill-rose-800'
+                    }`}
+                  >
+                    q_{pos.dataQubitCol}
+                  </text>
+                </g>
+              );
+            })}
 
-          {/* 4. Added External CNOT Edges up to stepIndex - 1 */}
-          {stepSnapshots.slice(0, Math.max(0, stepIndex - 1)).map((snap) => {
-            const pZ = layout.posMap.get(snap.zGlobalNode);
-            const pX = layout.posMap.get(snap.xGlobalNode);
-            if (!pZ || !pX) return null;
-            const midY = (pZ.y + pX.y) / 2;
-            const dPath = `M ${pZ.x} ${pZ.y} C ${pZ.x} ${midY}, ${pX.x} ${midY}, ${pX.x} ${pX.y}`;
+            {/* 3. Internal Edges of baseGlobalG (bold for Spanning Forest F, dashed for non-tree flag closure) */}
+            {internalEdges.map((e, idx) => {
+              const p1 = layout.posMap.get(e.source);
+              const p2 = layout.posMap.get(e.target);
+              if (!p1 || !p2) return null;
+              const inForest = hasUndirectedEdge(globalF, e.source, e.target);
 
-            return (
-              <path
-                key={`cnot-${snap.stepIndex}`}
-                d={dPath}
-                fill="none"
-                stroke="#0369a1"
-                strokeWidth={2}
-                strokeOpacity={0.72}
-              />
-            );
-          })}
+              if (
+                !inForest &&
+                Math.abs(p1.x - p2.x) < 2 &&
+                Math.abs(p1.y - p2.y) > layout.rowStepY * 1.2
+              ) {
+                const midY = (p1.y + p2.y) / 2;
+                const dCurve = `M ${p1.x} ${p1.y} Q ${p1.x + 24} ${midY} ${p2.x} ${p2.y}`;
+                return (
+                  <path
+                    key={`int-${idx}`}
+                    d={dCurve}
+                    fill="none"
+                    stroke="#64748b"
+                    strokeWidth={1.9}
+                    strokeDasharray="4,3"
+                  />
+                );
+              }
 
-          {/* 5. Active Step External CNOT Edge (stepIndex - 1) */}
-          {activeSnap && (() => {
-            const pZ = layout.posMap.get(activeSnap.zGlobalNode);
-            const pX = layout.posMap.get(activeSnap.xGlobalNode);
-            if (!pZ || !pX) return null;
-            const midY = (pZ.y + pX.y) / 2;
-            const dPath = `M ${pZ.x} ${pZ.y} C ${pZ.x} ${midY}, ${pX.x} ${midY}, ${pX.x} ${pX.y}`;
+              return (
+                <line
+                  key={`int-${idx}`}
+                  x1={p1.x}
+                  y1={p1.y}
+                  x2={p2.x}
+                  y2={p2.y}
+                  stroke={inForest ? '#0f172a' : '#64748b'}
+                  strokeWidth={inForest ? 3.2 : 1.9}
+                  strokeDasharray={inForest ? undefined : '4,3'}
+                />
+              );
+            })}
 
-            return (
-              <g key="active-cnot-edge">
+            {/* 4. Added External CNOT Edges up to stepIndex - 1 */}
+            {stepSnapshots.slice(0, Math.max(0, stepIndex - 1)).map((snap) => {
+              const pZ = layout.posMap.get(snap.zGlobalNode);
+              const pX = layout.posMap.get(snap.xGlobalNode);
+              if (!pZ || !pX) return null;
+              const midX = (pZ.x + pX.x) / 2;
+              const dPath = `M ${pZ.x} ${pZ.y} C ${midX} ${pZ.y}, ${midX} ${pX.y}, ${pX.x} ${pX.y}`;
+
+              return (
                 <path
+                  key={`cnot-${snap.stepIndex}`}
                   d={dPath}
                   fill="none"
-                  stroke="#fed7aa"
-                  strokeWidth={8}
-                  strokeLinecap="round"
+                  stroke="#0369a1"
+                  strokeWidth={2.1}
+                  strokeOpacity={0.75}
                 />
-                <path
-                  d={dPath}
-                  fill="none"
-                  stroke="#ea580c"
-                  strokeWidth={3.2}
-                  strokeLinecap="round"
-                />
-              </g>
-            );
-          })()}
+              );
+            })}
 
-          {/* 6. 3-Ary Spider Nodes & Root Highlights */}
-          {Array.from(layout.posMap.entries()).map(([gId, pos]) => {
-            const isZ = pos.compKind === 'Z';
-            const fill = isZ ? rowFill : colFill;
-            const stroke = isZ ? rowStroke : colStroke;
-            const isActiveEndpoint =
-              activeSnap?.zGlobalNode === gId ||
-              activeSnap?.xGlobalNode === gId;
-            const isActiveParent =
-              activeSnap?.zParentGlobalNodes.includes(gId) ||
-              activeSnap?.xParentGlobalNodes.includes(gId);
-            const isFlag = nodeStatusAtStep.flagNodes.has(gId);
+            {/* 5. Active Step External CNOT Edge (stepIndex - 1) */}
+            {activeSnap &&
+              (() => {
+                const pZ = layout.posMap.get(activeSnap.zGlobalNode);
+                const pX = layout.posMap.get(activeSnap.xGlobalNode);
+                if (!pZ || !pX) return null;
+                const midX = (pZ.x + pX.x) / 2;
+                const dPath = `M ${pZ.x} ${pZ.y} C ${midX} ${pZ.y}, ${midX} ${pX.y}, ${pX.x} ${pX.y}`;
 
-            return (
-              <g key={`node-${gId}`}>
-                {/* Root node blue square highlight (matching TikZ root_highlight) */}
-                {pos.isRoot && (
-                  <g>
-                    <rect
-                      x={pos.x - 14.5}
-                      y={pos.y - 14.5}
-                      width={29}
-                      height={29}
-                      rx={5}
+                return (
+                  <g key="active-cnot-edge">
+                    <path
+                      d={dPath}
                       fill="none"
-                      stroke="#2563eb"
-                      strokeWidth={2.2}
+                      stroke="#fed7aa"
+                      strokeWidth={8}
+                      strokeLinecap="round"
                     />
-                    <text
-                      x={pos.x}
-                      y={pos.y + 23}
-                      textAnchor="middle"
-                      className="font-mono text-[8.5px] font-bold fill-blue-700"
-                    >
-                      r_{pos.rootTreeCol}
-                    </text>
+                    <path
+                      d={dPath}
+                      fill="none"
+                      stroke="#ea580c"
+                      strokeWidth={3.2}
+                      strokeLinecap="round"
+                    />
                   </g>
-                )}
+                );
+              })()}
 
-                {/* Active step endpoint glow */}
-                {isActiveEndpoint && (
+            {/* 6. 3-Ary Spider Nodes & Root Highlights */}
+            {Array.from(layout.posMap.entries()).map(([gId, pos]) => {
+              const isZ = pos.compKind === 'Z';
+              const fill = isZ ? rowFill : colFill;
+              const stroke = isZ ? rowStroke : colStroke;
+              const isActiveEndpoint =
+                activeSnap?.zGlobalNode === gId ||
+                activeSnap?.xGlobalNode === gId;
+              const isActiveParent =
+                activeSnap?.zParentGlobalNodes.includes(gId) ||
+                activeSnap?.xParentGlobalNodes.includes(gId);
+              const isFlag = nodeStatusAtStep.flagNodes.has(gId);
+
+              return (
+                <g key={`node-${gId}`}>
+                  {/* Root node blue square highlight (matching TikZ root_highlight) */}
+                  {pos.isRoot && (
+                    <g>
+                      <rect
+                        x={pos.x - 14.5}
+                        y={pos.y - 14.5}
+                        width={29}
+                        height={29}
+                        rx={5}
+                        fill="none"
+                        stroke="#2563eb"
+                        strokeWidth={2.2}
+                      />
+                      <text
+                        x={pos.x}
+                        y={pos.y + 24}
+                        textAnchor="middle"
+                        className="font-mono text-[9px] font-bold fill-blue-700"
+                      >
+                        r_{pos.rootTreeCol}
+                      </text>
+                    </g>
+                  )}
+
+                  {/* Active step endpoint glow */}
+                  {isActiveEndpoint && (
+                    <circle
+                      cx={pos.x}
+                      cy={pos.y}
+                      r={16.5}
+                      fill="none"
+                      stroke="#ea580c"
+                      strokeWidth={3}
+                    />
+                  )}
+
+                  {/* Active step causal parent ring */}
+                  {isActiveParent && !isActiveEndpoint && (
+                    <circle
+                      cx={pos.x}
+                      cy={pos.y}
+                      r={15.5}
+                      fill="none"
+                      stroke="#9333ea"
+                      strokeWidth={2}
+                      strokeDasharray="3,2"
+                    />
+                  )}
+
                   <circle
                     cx={pos.x}
                     cy={pos.y}
-                    r={16.5}
-                    fill="none"
-                    stroke="#ea580c"
-                    strokeWidth={3}
-                  />
-                )}
-
-                {/* Active step causal parent ring */}
-                {isActiveParent && !isActiveEndpoint && (
-                  <circle
-                    cx={pos.x}
-                    cy={pos.y}
-                    r={15.5}
-                    fill="none"
-                    stroke="#9333ea"
+                    r={11}
+                    fill={fill}
+                    stroke={stroke}
                     strokeWidth={2}
-                    strokeDasharray="3,2"
                   />
-                )}
+                  <text
+                    x={pos.x}
+                    y={pos.y + 3.5}
+                    textAnchor="middle"
+                    className="font-mono text-[9.5px] font-bold fill-slate-900"
+                  >
+                    {gId}
+                  </text>
 
-                <circle
-                  cx={pos.x}
-                  cy={pos.y}
-                  r={10.5}
-                  fill={fill}
-                  stroke={stroke}
-                  strokeWidth={2}
-                />
-                <text
-                  x={pos.x}
-                  y={pos.y + 3.5}
-                  textAnchor="middle"
-                  className="font-mono text-[9.5px] font-bold fill-slate-900"
-                >
-                  {gId}
-                </text>
-
-                {isFlag && !pos.isRoot && (
-                  <title>Node {gId}: Flag measurement endpoint</title>
-                )}
-              </g>
-            );
-          })}
-        </svg>
+                  {isFlag && !pos.isRoot && (
+                    <title>Node {gId}: Flag measurement endpoint</title>
+                  )}
+                </g>
+              );
+            })}
+          </svg>
+        </div>
       </div>
 
       {/* Legend */}
@@ -518,3 +615,4 @@ export const GlobalGraphPanel: React.FC<GlobalGraphPanelProps> = ({
     </div>
   );
 };
+

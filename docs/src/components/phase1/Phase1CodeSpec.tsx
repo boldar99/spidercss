@@ -11,7 +11,7 @@ import {
 } from '../../stores/compilerStore';
 import type { QeccPreset } from '../../engine/types';
 import { StabilizerEditor } from './StabilizerEditor';
-import { Math as KaTeXMath } from '../common/Math';
+import { Math as KaTeXMath, LogicalKet } from '../common/Math';
 
 const QUICK_PICKS: Array<{ id: string; label: string; tag: string }> = [
   { id: 'FAO/7_1_3', label: 'Steane [[7, 1, 3]]', tag: 'Default' },
@@ -72,8 +72,8 @@ export const Phase1CodeSpec: React.FC = () => {
           <p className="text-xs text-slate-600 mt-1">
             Select from {QECC_PRESETS.length} benchmarked CSS codes or define custom{' '}
             <KaTeXMath tex="H_X, H_Z" /> parity-check matrices / Pauli strings, target basis (
-            <KaTeXMath tex="\ket{\overline{0}}^{\otimes k}" /> or{' '}
-            <KaTeXMath tex="\ket{\overline{+}}^{\otimes k}" />
+            <LogicalKet basis="Z" k={validation.k} /> or{' '}
+            <LogicalKet basis="X" k={validation.k} />
             ), and distance <KaTeXMath tex="d" />.
           </p>
         </div>
@@ -199,7 +199,7 @@ export const Phase1CodeSpec: React.FC = () => {
               }`}
             >
               <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
-              <KaTeXMath tex="\ket{\overline{0}}^{\otimes k}" />
+              <LogicalKet basis="Z" k={validation.k} />
               <span className="text-[10px] font-mono text-slate-400">(Z)</span>
             </button>
             <button
@@ -212,7 +212,7 @@ export const Phase1CodeSpec: React.FC = () => {
               }`}
             >
               <span className="w-2 h-2 rounded-full bg-rose-500"></span>
-              <KaTeXMath tex="\ket{\overline{+}}^{\otimes k}" />
+              <LogicalKet basis="X" k={validation.k} />
               <span className="text-[10px] font-mono text-slate-400">(X)</span>
             </button>
           </div>

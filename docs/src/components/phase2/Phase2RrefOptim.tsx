@@ -371,29 +371,25 @@ export const Phase2RrefOptim: React.FC = () => {
           />
         </div>
 
-        {/* Split-Screen Content: Left = MatrixStepViewer, Right = BipartiteZxView */}
-        <div className="mt-4 grid grid-cols-1 xl:grid-cols-12 gap-5 items-start">
-          <div className="xl:col-span-6">
-            <MatrixStepViewer
-              activeInputMatrix={activeInputMatrix}
-              rrefSnapshot={rrefSnapshot}
-              stage={rrefWalkthroughStage}
-              t={validation.t}
-              basis={basis}
-              onCustomPermutation={(perm) => generateNewPermutationTrial(perm)}
-            />
-          </div>
+        {/* Full-Width MatrixStepViewer followed by Full-Width BipartiteZxView */}
+        <div className="mt-4 space-y-5">
+          <MatrixStepViewer
+            activeInputMatrix={activeInputMatrix}
+            rrefSnapshot={rrefSnapshot}
+            stage={rrefWalkthroughStage}
+            t={validation.t}
+            basis={basis}
+            onCustomPermutation={(perm) => generateNewPermutationTrial(perm)}
+          />
 
-          <div className="xl:col-span-6">
-            <BipartiteZxView
-              matrix={rrefSnapshot.unpermutedMatrix}
-              pivots={rrefSnapshot.pivots}
-              nonPivots={rrefSnapshot.nonPivots}
-              cost={rrefSnapshot.cost}
-              basis={basis}
-              t={validation.t}
-            />
-          </div>
+          <BipartiteZxView
+            matrix={rrefSnapshot.unpermutedMatrix}
+            pivots={rrefSnapshot.pivots}
+            nonPivots={rrefSnapshot.nonPivots}
+            cost={rrefSnapshot.cost}
+            basis={basis}
+            t={validation.t}
+          />
         </div>
       </div>
 

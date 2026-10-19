@@ -28,48 +28,45 @@ export const BipartiteZxView: React.FC<BipartiteZxViewProps> = ({
   const numNonPivots = nonPivots.length;
   const totalQubits = numRows + numNonPivots;
 
-  // Compute SVG geometry for two parallel diagonal lines of spiders spanning the same horizontal space,
-  // with all boundary wires exiting to the right (ZX state)
+  // Compute SVG geometry for two vertical bipartite columns of spiders (Row spiders on left/top band,
+  // Non-Pivot Column spiders on right/bottom band), with all boundary wires exiting horizontally to the right
   const layout = useMemo(() => {
-    const totalTracks = Math.max(2, totalQubits);
     const stepY =
-      totalTracks > 28 ? 20 : totalTracks > 18 ? 25 : totalTracks > 10 ? 32 : 38;
-    const topPadding = 46;
-    const bottomPadding = 34;
-    const groupGapY = Math.max(40, stepY * 1.25);
+      totalQubits <= 8
+        ? 58
+        : totalQubits <= 14
+        ? 50
+        : totalQubits <= 22
+        ? 42
+        : 36;
+    const topPadding = 54;
+    const bottomPadding = 48;
+    const groupGapY = totalQubits <= 8 ? 64 : 52;
     const height = Math.max(
-      290,
+      480,
       topPadding +
         bottomPadding +
         Math.max(0, numRows - 1) * stepY +
         groupGapY +
-        Math.max(0, numNonPivots) * stepY
+        Math.max(0, numNonPivots - 1) * stepY
     );
-    const width = 560;
-    const rightBoundaryX = 486;
+    const width = 760;
+    const rowX = 185;
+    const colX = 485;
+    const rightBoundaryX = 665;
 
-    // Both diagonals span the exact same horizontal space [diagStartX, diagEndX]
-    const diagStartX = 115;
-    const diagEndX = 365;
+    // Column 1: Row Spiders (upper vertical band at x = rowX)
+    const rowPos = (rIdx: number) => ({
+      x: rowX,
+      y: topPadding + rIdx * stepY,
+    });
 
-    // Diagonal Line 1: Row Spiders (upper diagonal)
-    const rowPos = (rIdx: number) => {
-      const frac = numRows <= 1 ? 0.5 : rIdx / (numRows - 1);
-      return {
-        x: diagStartX + frac * (diagEndX - diagStartX),
-        y: topPadding + rIdx * stepY,
-      };
-    };
-
-    // Diagonal Line 2: Non-Pivot Column Spiders (lower diagonal, same horizontal span)
+    // Column 2: Non-Pivot Column Spiders (lower vertical band at x = colX)
     const colBaseY = topPadding + Math.max(0, numRows - 1) * stepY + groupGapY;
-    const colPos = (npIdx: number) => {
-      const frac = numNonPivots <= 1 ? 0.5 : npIdx / (numNonPivots - 1);
-      return {
-        x: diagStartX + frac * (diagEndX - diagStartX),
-        y: colBaseY + npIdx * stepY,
-      };
-    };
+    const colPos = (npIdx: number) => ({
+      x: colX,
+      y: colBaseY + npIdx * stepY,
+    });
 
     const edges: Array<{
       rIdx: number;
@@ -103,15 +100,15 @@ export const BipartiteZxView: React.FC<BipartiteZxViewProps> = ({
     return {
       width,
       height,
+      rowX,
+      colX,
       rightBoundaryX,
       colBaseY,
-      diagStartX,
-      diagEndX,
       rowPos,
       colPos,
       edges,
     };
-  }, [matrix, numRows, numNonPivots, nonPivots, totalQubits]);
+  }, [matrix, numRows, numNonPivots, nonPivots]);
 
   // Colors follow basis: for |0̄⟩ (basis='Z'), row spiders are Z (green) and col spiders are X (red).
   // For |+̄⟩ (basis='X'), roles interchange per Definition II.7 of the paper.
@@ -127,19 +124,13 @@ export const BipartiteZxView: React.FC<BipartiteZxViewProps> = ({
 
   const internalEdgeStroke = unidealized ? '#1e293b' : '#9333ea';
 
-  const firstRowPt = numRows > 0 ? layout.rowPos(0) : null;
-  const lastRowPt = numRows > 1 ? layout.rowPos(numRows - 1) : null;
-  const firstColPt = numNonPivots > 0 ? layout.colPos(0) : null;
-  const lastColPt =
-    numNonPivots > 1 ? layout.colPos(numNonPivots - 1) : null;
-
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-2xs h-full flex flex-col justify-between">
+    <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-2xs flex flex-col justify-between">
       <div>
-        <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-2.5">
           <div>
             <h4 className="text-xs font-bold uppercase tracking-wider text-slate-700">
-              Bipartite ZX-State Diagram ({basis === 'Z' ? 'X-RREF' : 'Z-RREF'} Normal Form)
+              Bipartite ZX-State Diagram (RREF Form)
             </h4>
             <p className="text-[11px] text-slate-500 mt-0.5">
               {numRows} row spiders (<KaTeXMath tex={`${rowSym}_j`} />) •{' '}
@@ -177,62 +168,44 @@ export const BipartiteZxView: React.FC<BipartiteZxViewProps> = ({
           </div>
         </div>
 
-        <div className="w-full overflow-x-auto custom-scrollbar rounded-lg border border-slate-100 bg-slate-50/50">
-          <svg
-            viewBox={`0 0 ${layout.width} ${layout.height}`}
-            className="w-full h-auto max-h-[500px] select-none"
-          >
-            {/* Headers */}
-            <text
-              x={layout.diagStartX}
-              y={22}
-              textAnchor="start"
-              className="fill-slate-700 text-[11px] font-sans font-semibold"
+        <div className="square-panel-wrapper">
+          <div className="square-panel-scroll custom-scrollbar rounded-lg border border-slate-100 bg-slate-50/50">
+            <svg
+              viewBox={`0 0 ${layout.width} ${layout.height}`}
+              style={{
+                width: '100%',
+                minWidth: '560px',
+                height: `${layout.height}px`,
+              }}
+              className="select-none block mx-auto"
             >
-              Row {rowSym}-Spiders (deg w_j)
-            </text>
-            <text
-              x={layout.diagStartX}
-              y={layout.colBaseY - 18}
-              textAnchor="start"
-              className="fill-slate-700 text-[11px] font-sans font-semibold"
-            >
-              Col {colSym}-Spiders (deg w_i+1)
-            </text>
-            <text
-              x={layout.rightBoundaryX}
-              y={22}
-              textAnchor="middle"
-              className="fill-slate-500 text-[10px] font-mono font-semibold"
-            >
-              Output State Legs (q_0..q_{totalQubits - 1})
-            </text>
+              {/* Headers */}
+              <text
+                x={layout.rowX}
+                y={24}
+                textAnchor="middle"
+                className="fill-slate-700 text-[11.5px] font-sans font-semibold"
+              >
+                Row {rowSym}-Spiders (deg w_j)
+              </text>
+              <text
+                x={layout.colX}
+                y={layout.colBaseY - 22}
+                textAnchor="middle"
+                className="fill-slate-700 text-[11.5px] font-sans font-semibold"
+              >
+                Col {colSym}-Spiders (deg w_i+1)
+              </text>
+              <text
+                x={layout.rightBoundaryX}
+                y={24}
+                textAnchor="middle"
+                className="fill-slate-500 text-[11px] font-mono font-semibold"
+              >
+                Output State Legs (q_0..q_{totalQubits - 1})
+              </text>
 
-            {/* Subtle Diagonal Axis Guides */}
-            {firstRowPt && lastRowPt && (
-              <line
-                x1={firstRowPt.x}
-                y1={firstRowPt.y}
-                x2={lastRowPt.x}
-                y2={lastRowPt.y}
-                stroke="#cbd5e1"
-                strokeWidth={1.2}
-                strokeDasharray="3,3"
-              />
-            )}
-            {firstColPt && lastColPt && (
-              <line
-                x1={firstColPt.x}
-                y1={firstColPt.y}
-                x2={lastColPt.x}
-                y2={lastColPt.y}
-                stroke="#cbd5e1"
-                strokeWidth={1.2}
-                strokeDasharray="3,3"
-              />
-            )}
-
-            {/* 1. Physical Black Output Boundary Wires (All exiting to the right as a ZX state) */}
+              {/* 1. Physical Black Output Boundary Wires (All exiting to the right as a ZX state) */}
             {Array.from({ length: numRows }, (_, rIdx) => {
               const p = layout.rowPos(rIdx);
               const pivotQ = pivots[rIdx];
@@ -425,13 +398,14 @@ export const BipartiteZxView: React.FC<BipartiteZxViewProps> = ({
                 </g>
               );
             })}
-          </svg>
+            </svg>
+          </div>
         </div>
       </div>
 
       <div className="mt-2.5 flex items-center justify-between text-[11px] text-slate-500">
         <span>
-          Hover over any spider on the two diagonals to highlight its incident edges and{' '}
+          Hover over any spider to highlight its incident edges and{' '}
           <KaTeXMath tex="t={}" />
           {t} flags.
         </span>

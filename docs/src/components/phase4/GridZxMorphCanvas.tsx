@@ -184,7 +184,19 @@ export const GridZxMorphCanvas: React.FC<GridZxMorphCanvasProps> = ({
       target: number;
     }> = [];
 
-    const nextFreeCol = new Map<number, number>();
+    const wireLastCol = new Map<number, number>();
+    const colOccupiedIntervals = new Map<number, Array<[number, number]>>();
+    const canPlaceInterval = (col: number, minQ: number, maxQ: number) => {
+      const list = colOccupiedIntervals.get(col);
+      if (!list) return true;
+      for (const [a, b] of list) {
+        if (Math.max(a, minQ) <= Math.min(b, maxQ)) {
+          return false;
+        }
+      }
+      return true;
+    };
+
     for (const op of rawInstructions) {
       if (RESET_GATES.has(op.name)) {
         for (const t of op.targets) {
@@ -199,19 +211,24 @@ export const GridZxMorphCanvas: React.FC<GridZxMorphCanvasProps> = ({
           if (c?.type === 'qubit' && t?.type === 'qubit') {
             const minQ = Math.min(c.value, t.value);
             const maxQ = Math.max(c.value, t.value);
-            let col = 0;
-            // Ensure vertical CNOT lines in the same column don't overlap visually
-            for (let q = minQ; q <= maxQ; q++) {
-              col = Math.max(col, nextFreeCol.get(q) ?? 0);
+            let col = Math.max(
+              (wireLastCol.get(c.value) ?? -1) + 1,
+              (wireLastCol.get(t.value) ?? -1) + 1
+            );
+            while (!canPlaceInterval(col, minQ, maxQ)) {
+              col++;
             }
             cnotColumns.push({
               colIndex: col,
               control: c.value,
               target: t.value,
             });
-            for (let q = minQ; q <= maxQ; q++) {
-              nextFreeCol.set(q, col + 1);
-            }
+            const list = colOccupiedIntervals.get(col) ?? [];
+            list.push([minQ, maxQ]);
+            colOccupiedIntervals.set(col, list);
+            // Advance only c and t, not intermediate wires
+            wireLastCol.set(c.value, col);
+            wireLastCol.set(t.value, col);
           }
         }
       } else if (MEASUREMENT_GATES.has(op.name)) {
@@ -228,7 +245,7 @@ export const GridZxMorphCanvas: React.FC<GridZxMorphCanvasProps> = ({
       ...cnotColumns.map((c) => c.colIndex + 1)
     );
     const leftWireStart = 115;
-    const colSpacing = Math.max(30, Math.min(48, 520 / Math.max(1, numCnotCols)));
+    const colSpacing = numCnotCols <= 16 ? 40 : 34;
     const rightWireEnd = leftWireStart + numCnotCols * colSpacing + 55;
     const svgWidth = Math.max(720, rightWireEnd + 65);
 

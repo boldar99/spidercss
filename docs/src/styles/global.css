@@ -43,3 +43,22 @@
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
   background: #94a3b8;
 }
+
+/* Container-query helper: grows vertically to fit content up to a 1:1 square, then scrolls */
+.square-panel-wrapper {
+  container-type: inline-size;
+  width: 100%;
+}
+
+.square-panel-scroll {
+  min-height: 420px;
+  max-height: min(100cqw, 720px);
+  overflow: auto;
+}
+
+/* Crisp KaTeX overline bar for logical kets |\overline{0}> and |\overline{+}> */
+.katex .overline .overline-line {
+  min-height: 0;
+  border-bottom-width: max(1.25px, 0.05em) !important;
+}
+

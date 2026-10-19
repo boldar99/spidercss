@@ -3,7 +3,7 @@ import { CheckCircle2, AlertTriangle, Grid, Terminal, Plus, Minus, Copy, Check }
 import type { BasisType, BinaryMatrix, CSSValidationResult } from '../../engine/types';
 import { matricesToPauliStrings, parsePauliStrings } from '../../engine/cssState';
 import { cloneMatrix } from '../../engine/gf2';
-import { Math as KaTeXMath } from '../common/Math';
+import { Math as KaTeXMath, LogicalKet } from '../common/Math';
 
 interface StabilizerEditorProps {
   H_x: BinaryMatrix;
@@ -157,8 +157,8 @@ export const StabilizerEditor: React.FC<StabilizerEditorProps> = ({
 
           <div className="flex items-center gap-1.5">
             {isActiveBasisMatrix && (
-              <span className="text-[11px] font-mono font-semibold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300">
-                Active M for |{basis === 'Z' ? '0̄' : '+̄'}⟩
+              <span className="text-[11px] font-mono font-semibold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300 inline-flex items-center gap-1">
+                Active M for <LogicalKet basis={basis} k={validation.k} />
               </span>
             )}
             <button
@@ -467,11 +467,11 @@ export const StabilizerEditor: React.FC<StabilizerEditorProps> = ({
                 <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
                 Preparing{' '}
                 <strong className="text-slate-800">
-                  |{basis === 'Z' ? '0̄' : '+̄'}⟩
+                  <LogicalKet basis={basis} k={validation.k} />
                 </strong>{' '}
                 optimizes{' '}
                 <strong className="text-slate-800">
-                  {basis === 'Z' ? 'H_X' : 'H_Z'}
+                  <KaTeXMath tex={basis === 'Z' ? 'H_X' : 'H_Z'} />
                 </strong>
               </span>
               <span className="font-mono">

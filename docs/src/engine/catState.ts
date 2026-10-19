@@ -1067,3 +1067,99 @@ export function wellOrderedCompositeCatStateData(
     edge: prevExit!,
   };
 }
+
+export interface CatTreeGridLayout {
+  numCols: number;
+  numRows: number;
+  coords: Map<number, { col: number; row: number }>;
+  rootId: number;
+  exitId: number;
+}
+
+/**
+ * Computes a deterministic 2D grid layout (col, row) for a WellOrderedCatState
+ * matching Figure 6 (`building-G-and-D.tikz`) of the paper:
+ * - Row 0 holds the primary path in F from the root `r_k` (col 0) to `state.edge` (rightmost col).
+ * - Each flag branch in F splits onto its own horizontal row (`row = 1, 2, ...`) with `col` increasing left-to-right.
+ */
+export function computeCatStateTreeLayout(
+  state: WellOrderedCatState
+): CatTreeGridLayout {
+  const rootId = Object.values(state.roots)[0] ?? 0;
+  const exitId = state.edge;
+  const primarySet = new Set<number>(
+    state.F.nodes.has(rootId) && state.F.nodes.has(exitId)
+      ? shortestPathUndirected(state.F, rootId, exitId)
+      : [rootId]
+  );
+
+  const childrenMap = new Map<number, number[]>();
+  const subtreeSize = new Map<number, number>();
+  const visited = new Set<number>();
+
+  const buildTree = (u: number): number => {
+    visited.add(u);
+    const ch: number[] = [];
+    let size = 1;
+    for (const v of getUndirectedNeighbors(state.F, u)) {
+      if (!visited.has(v)) {
+        ch.push(v);
+        size += buildTree(v);
+      }
+    }
+    ch.sort((a, b) => {
+      const aPrim = primarySet.has(a) ? 1 : 0;
+      const bPrim = primarySet.has(b) ? 1 : 0;
+      if (aPrim !== bPrim) return bPrim - aPrim;
+      const sa = subtreeSize.get(a) ?? 1;
+      const sb = subtreeSize.get(b) ?? 1;
+      if (sa !== sb) return sb - sa;
+      return a - b;
+    });
+    childrenMap.set(u, ch);
+    subtreeSize.set(u, size);
+    return size;
+  };
+
+  if (state.F.nodes.has(rootId)) {
+    buildTree(rootId);
+  }
+
+  const coords = new Map<number, { col: number; row: number }>();
+  let nextRow = 1;
+  let maxCol = 0;
+
+  const assignCoords = (u: number, col: number, row: number) => {
+    coords.set(u, { col, row });
+    if (col > maxCol) maxCol = col;
+    const ch = childrenMap.get(u) ?? [];
+    ch.forEach((v, idx) => {
+      if (idx === 0) {
+        assignCoords(v, col + 1, row);
+      } else {
+        const branchRow = nextRow++;
+        assignCoords(v, col + 1, branchRow);
+      }
+    });
+  };
+
+  if (state.F.nodes.has(rootId)) {
+    assignCoords(rootId, 0, 0);
+  }
+
+  for (const nodeId of state.G.nodes.keys()) {
+    if (!coords.has(nodeId)) {
+      const r = nextRow++;
+      coords.set(nodeId, { col: 0, row: r });
+    }
+  }
+
+  return {
+    numCols: maxCol + 1,
+    numRows: Math.max(1, nextRow),
+    coords,
+    rootId,
+    exitId,
+  };
+}
+
