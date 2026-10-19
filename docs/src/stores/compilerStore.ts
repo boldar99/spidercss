@@ -135,7 +135,7 @@ export const $compilerStore = atom<CompilerStoreState>({
   postPhase2Branch: 'pipeline',
   rewriteStage: 1,
   analyzeHookErrors: false,
-  routingHeuristic: 'critical_path_first',
+  routingHeuristic: 'sa_sequence_distance',
   customEdgeOrder: undefined,
   alg1StepIndex: 0,
   extractionMorphStage: 'd',

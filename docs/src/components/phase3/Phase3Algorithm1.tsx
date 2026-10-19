@@ -25,7 +25,6 @@ import { edgeKey } from '../../engine/heuristics';
 import type { GlobalPipelineSetup } from '../../engine/spiderLegMatcher';
 import { TargetZxPanel } from './TargetZxPanel';
 import { GlobalGraphPanel } from './GlobalGraphPanel';
-import { GlobalDagPanel } from './GlobalDagPanel';
 import { Math as KaTeXMath } from '../common/Math';
 
 interface Phase3Algorithm1Props {
@@ -37,6 +36,11 @@ const HEURISTIC_OPTIONS: Array<{
   label: string;
   shortDesc: string;
 }> = [
+  {
+    value: 'sa_sequence_distance',
+    label: 'SA Sequence Distance',
+    shortDesc: 'Simulated annealing minimizing cat-state sequence span',
+  },
   {
     value: 'critical_path_first',
     label: 'Critical Path First',
@@ -51,11 +55,6 @@ const HEURISTIC_OPTIONS: Array<{
     value: 'active_spider_first',
     label: 'Active Spider First',
     shortDesc: 'Completes already-opened cat states first to shorten ancilla lifetimes',
-  },
-  {
-    value: 'sa_sequence_distance',
-    label: 'SA Sequence Distance',
-    shortDesc: 'Simulated annealing minimizing cat-state sequence span',
   },
   {
     value: 'joint_resource',
@@ -89,7 +88,6 @@ export const Phase3Algorithm1: React.FC<Phase3Algorithm1Props> = ({
 
   const [isPlaying, setIsPlaying] = useState(false);
   const [playIntervalMs, setPlayIntervalMs] = useState(550);
-  const [activeGlobalView, setActiveGlobalView] = useState<'G' | 'D'>('G');
 
   // Stop playback when reaching the end
   useEffect(() => {
@@ -464,72 +462,13 @@ export const Phase3Algorithm1: React.FC<Phase3Algorithm1Props> = ({
           />
         </div>
 
-        {/* Radio Button Selector for G_global vs D_global */}
-        <div className="space-y-3">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50/90 px-4 py-3">
-            <div className="text-xs font-semibold text-slate-700">
-              Select Global Structure View:
-            </div>
-            <div
-              role="radiogroup"
-              aria-label="Global Graph or Digraph View"
-              className="flex flex-wrap items-center gap-3"
-            >
-              <label
-                className={`inline-flex items-center gap-2.5 px-3.5 py-2 rounded-xl border text-xs font-semibold transition-all cursor-pointer ${
-                  activeGlobalView === 'G'
-                    ? 'bg-white border-emerald-500 text-emerald-950 shadow-2xs ring-2 ring-emerald-500/20'
-                    : 'bg-white/70 border-slate-200 text-slate-700 hover:bg-white hover:border-slate-300'
-                }`}
-              >
-                <input
-                  type="radio"
-                  name="phase3-global-view"
-                  value="G"
-                  checked={activeGlobalView === 'G'}
-                  onChange={() => setActiveGlobalView('G')}
-                  className="w-3.5 h-3.5 accent-emerald-700 cursor-pointer"
-                />
-                <span>
-                  Global Graph (<code className="font-mono">G_global</code> &amp; Spanning Forest <code className="font-mono">F</code>)
-                </span>
-              </label>
-
-              <label
-                className={`inline-flex items-center gap-2.5 px-3.5 py-2 rounded-xl border text-xs font-semibold transition-all cursor-pointer ${
-                  activeGlobalView === 'D'
-                    ? 'bg-white border-amber-500 text-amber-950 shadow-2xs ring-2 ring-amber-500/20'
-                    : 'bg-white/70 border-slate-200 text-slate-700 hover:bg-white hover:border-slate-300'
-                }`}
-              >
-                <input
-                  type="radio"
-                  name="phase3-global-view"
-                  value="D"
-                  checked={activeGlobalView === 'D'}
-                  onChange={() => setActiveGlobalView('D')}
-                  className="w-3.5 h-3.5 accent-amber-600 cursor-pointer"
-                />
-                <span>
-                  Causal Dependency Digraph (<code className="font-mono">D_global</code> — Horizontal DAG)
-                </span>
-              </label>
-            </div>
-          </div>
-
-          {activeGlobalView === 'G' ? (
-            <GlobalGraphPanel
-              pipeline={pipeline}
-              stepIndex={clampedStep}
-              basis={basis}
-            />
-          ) : (
-            <GlobalDagPanel
-              pipeline={pipeline}
-              stepIndex={clampedStep}
-              basis={basis}
-            />
-          )}
+        {/* Panel 2: Global Graph & Spanning Forest / Digraph (Selector & Zoom inside card) */}
+        <div>
+          <GlobalGraphPanel
+            pipeline={pipeline}
+            stepIndex={clampedStep}
+            basis={basis}
+          />
         </div>
       </div>
     </div>
