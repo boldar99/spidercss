@@ -37,7 +37,7 @@ function formatPresetOptionLabel(p: QeccPreset): string {
 
 export const Phase1CodeSpec: React.FC = () => {
   const state = useStore($compilerStore);
-  const { selectedPresetId, basis, d, H_x, H_z, validation } = state;
+  const { selectedPresetId, basis, d, H_x, H_z, validation, mode } = state;
 
   const groupedPresets = useMemo(() => {
     const groups: Record<'FAO' | 'MQT' | 'misc', QeccPreset[]> = {
@@ -245,39 +245,41 @@ export const Phase1CodeSpec: React.FC = () => {
         </div>
       </div>
 
-      {/* Quick-Select Pills for Featured Codes */}
-      <div className="mt-3.5 flex flex-wrap items-center gap-1.5">
-        <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-500 mr-1">
-          <Sparkles className="w-3 h-3 text-emerald-600" />
-          Quick Presets:
-        </span>
-        {QUICK_PICKS.map((item) => {
-          const isSelected = selectedPresetId === item.id;
-          return (
-            <button
-              key={item.id}
-              type="button"
-              onClick={() => selectPreset(item.id)}
-              className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition-all cursor-pointer border ${
-                isSelected
-                  ? 'bg-emerald-700 text-white border-emerald-700 shadow-2xs'
-                  : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
-              }`}
-            >
-              <span>{item.label}</span>
-              <span
-                className={`text-[10px] font-mono px-1.5 py-0.2 rounded ${
+      {/* Quick-Select Pills for Featured Codes (Walkthrough Mode Only) */}
+      {mode !== 'gui' && (
+        <div className="mt-3.5 flex flex-wrap items-center gap-1.5">
+          <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-500 mr-1">
+            <Sparkles className="w-3 h-3 text-emerald-600" />
+            Quick Presets:
+          </span>
+          {QUICK_PICKS.map((item) => {
+            const isSelected = selectedPresetId === item.id;
+            return (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => selectPreset(item.id)}
+                className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition-all cursor-pointer border ${
                   isSelected
-                    ? 'bg-emerald-800 text-emerald-100'
-                    : 'bg-white text-slate-500 border border-slate-200/80'
+                    ? 'bg-emerald-700 text-white border-emerald-700 shadow-2xs'
+                    : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
                 }`}
               >
-                {item.tag}
-              </span>
-            </button>
-          );
-        })}
-      </div>
+                <span>{item.label}</span>
+                <span
+                  className={`text-[10px] font-mono px-1.5 py-0.2 rounded ${
+                    isSelected
+                      ? 'bg-emerald-800 text-emerald-100'
+                      : 'bg-white text-slate-500 border border-slate-200/80'
+                  }`}
+                >
+                  {item.tag}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       {/* Dual-Mode Stabilizer Matrix / Pauli String Editor */}
       <StabilizerEditor

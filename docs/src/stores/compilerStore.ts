@@ -354,6 +354,48 @@ export function runBasisOptimizationSync(
   return result;
 }
 
+export function runBasisOptimizer(maxTries?: number): void {
+  const cur = $compilerStore.get();
+  if (cur.isOptimizingBasis || !cur.validation.valid) return;
+  setOptimizingBasis(true);
+
+  const tries = maxTries ?? cur.maxBasisTries;
+  if (typeof Worker !== 'undefined') {
+    try {
+      const worker = new Worker(
+        new URL('../engine/compiler.worker.ts', import.meta.url),
+        { type: 'module' }
+      );
+      const reqId = `mc-${Date.now()}`;
+      worker.onmessage = (event) => {
+        const msg = event.data;
+        if (msg.requestId === reqId && msg.type === 'OPTIMIZE_MATRIX_RESULT') {
+          applyRowOptimizationResult(msg.result);
+          worker.terminate();
+        }
+      };
+      worker.onerror = () => {
+        worker.terminate();
+        const res = runBasisOptimizationSync(tries);
+        applyRowOptimizationResult(res);
+      };
+      worker.postMessage({
+        type: 'OPTIMIZE_MATRIX',
+        requestId: reqId,
+        M: cur.activeInputMatrix,
+        t: cur.validation.t,
+        maxBasisTries: tries,
+        seed: cur.permutationSeed + 1,
+      });
+      return;
+    } catch {
+      // Fallback below
+    }
+  }
+  const res = runBasisOptimizationSync(tries);
+  applyRowOptimizationResult(res);
+}
+
 export function setPostPhase2Branch(postPhase2Branch: PostPhase2Branch): void {
   const cur = $compilerStore.get();
   $compilerStore.set({ ...cur, postPhase2Branch });
