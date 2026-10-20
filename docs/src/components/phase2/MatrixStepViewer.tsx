@@ -248,8 +248,8 @@ export const MatrixStepViewer: React.FC<MatrixStepViewerProps> = ({
                   'px-1 py-1.5 text-center font-semibold min-w-[24px] rounded-t transition-all duration-150 cursor-pointer select-none ';
                 if (isColHighlighted) {
                   thClass += isChosenZ
-                    ? 'bg-rose-200 text-rose-950 ring-2 ring-rose-500 font-black shadow-xs '
-                    : 'bg-emerald-200 text-emerald-950 ring-2 ring-emerald-500 font-black shadow-xs ';
+                    ? 'bg-rose-200 text-rose-950 font-black shadow-xs border-x border-t border-rose-400 border-b-2 border-rose-400 '
+                    : 'bg-emerald-200 text-emerald-950 font-black shadow-xs border-x border-t border-emerald-400 border-b-2 border-emerald-400 ';
                 } else if (isNonPivotCol) {
                   thClass += isChosenZ
                     ? 'bg-rose-100/75 text-rose-900 border-b-2 border-rose-300 hover:bg-rose-100 '
@@ -319,8 +319,8 @@ export const MatrixStepViewer: React.FC<MatrixStepViewerProps> = ({
               let trClass = 'transition-all duration-150 ';
               if (isRowHighlighted) {
                 trClass += isChosenZ
-                  ? 'bg-emerald-100/90 ring-2 ring-emerald-500 font-semibold shadow-xs '
-                  : 'bg-rose-100/90 ring-2 ring-rose-500 font-semibold shadow-xs ';
+                  ? 'bg-emerald-100/80 font-semibold '
+                  : 'bg-rose-100/80 font-semibold ';
               } else if (hasPivot) {
                 trClass += isChosenZ
                   ? 'bg-emerald-50/35 hover:bg-emerald-50/70 '
@@ -336,10 +336,19 @@ export const MatrixStepViewer: React.FC<MatrixStepViewerProps> = ({
                 <tr
                   key={rIdx}
                   className={trClass}
-                  onMouseEnter={() => onHoverRow?.(rIdx)}
-                  onMouseLeave={() => onHoverRow?.(null)}
                 >
-                  <td className="py-1 pr-2 text-[11px] whitespace-nowrap">
+                  <td
+                    className={`py-1 pr-2 text-[11px] whitespace-nowrap cursor-pointer select-none ${
+                      isRowHighlighted
+                        ? isChosenZ
+                          ? 'border-y border-emerald-400'
+                          : 'border-y border-rose-400'
+                        : ''
+                    }`}
+                    onMouseEnter={() => onHoverRow?.(rIdx)}
+                    onMouseLeave={() => onHoverRow?.(null)}
+                    title={`Hover row label to highlight ${basis === 'Z' ? 'Z' : 'X'}_${rIdx} spider in diagram`}
+                  >
                     <div className="flex items-center gap-1">
                       <span
                         className={`px-1.5 py-0.5 rounded text-[11px] font-bold transition-all ${
@@ -380,12 +389,20 @@ export const MatrixStepViewer: React.FC<MatrixStepViewerProps> = ({
                     let tdBg = '';
                     if (isColHighlighted) {
                       tdBg = isChosenZ
-                        ? 'bg-rose-100/80 ring-1 ring-rose-300'
-                        : 'bg-emerald-100/80 ring-1 ring-emerald-300';
+                        ? 'bg-rose-100/75'
+                        : 'bg-emerald-100/75';
                     } else if (isCellInHighlightedRow) {
                       tdBg = isChosenZ ? 'bg-emerald-100/70' : 'bg-rose-100/70';
                     } else if (isNonPivotCol) {
                       tdBg = isChosenZ ? 'bg-rose-50/50' : 'bg-emerald-50/50';
+                    }
+
+                    // Uniform row border on all cells when row is highlighted (exact same 1px top & bottom)
+                    let rowBorder = '';
+                    if (isCellInHighlightedRow) {
+                      rowBorder = isChosenZ
+                        ? 'border-y border-emerald-400'
+                        : 'border-y border-rose-400';
                     }
 
                     const isAnyHighlight =
@@ -398,7 +415,7 @@ export const MatrixStepViewer: React.FC<MatrixStepViewerProps> = ({
                     return (
                       <td
                         key={cIdx}
-                        className={`p-0.5 text-center transition-all duration-150 ${tdBg} ${
+                        className={`p-0.5 text-center transition-all duration-150 ${tdBg} ${rowBorder} ${
                           isDimmedCell ? 'opacity-40' : ''
                         }`}
                       >
@@ -440,7 +457,11 @@ export const MatrixStepViewer: React.FC<MatrixStepViewerProps> = ({
 
                   <td
                     className={`pl-2.5 py-1 text-right font-semibold ${
-                      hasPivot
+                      isRowHighlighted
+                        ? isChosenZ
+                          ? 'border-y border-emerald-400 text-emerald-900'
+                          : 'border-y border-rose-400 text-rose-900'
+                        : hasPivot
                         ? isChosenZ
                           ? 'text-emerald-900'
                           : 'text-rose-900'
@@ -451,7 +472,11 @@ export const MatrixStepViewer: React.FC<MatrixStepViewerProps> = ({
                   </td>
                   <td
                     className={`pl-2 py-1 text-right font-semibold ${
-                      hasPivot
+                      isRowHighlighted
+                        ? isChosenZ
+                          ? 'border-y border-emerald-400 text-emerald-700'
+                          : 'border-y border-rose-400 text-rose-700'
+                        : hasPivot
                         ? isChosenZ
                           ? 'text-emerald-700'
                           : 'text-rose-700'
@@ -476,15 +501,14 @@ export const MatrixStepViewer: React.FC<MatrixStepViewerProps> = ({
                 const isPivotCol = pivotColToRow.has(cIdx);
                 const isNonPivotCol = !isPivotCol;
                 const isColHighlighted = highlightedColIdx === cIdx;
-                const isDimmedCol =
-                  highlightedColIdx !== null && !isColHighlighted;
 
+                // Col w_i matches the exact same background and opacity as the column cells above
                 let cellClass =
                   'py-1.5 px-1 text-center font-semibold transition-all duration-150 ';
                 if (isColHighlighted) {
                   cellClass += isChosenZ
-                    ? 'text-rose-950 bg-rose-200 ring-1 ring-rose-400 font-black '
-                    : 'text-emerald-950 bg-emerald-200 ring-1 ring-emerald-400 font-black ';
+                    ? 'text-rose-900 bg-rose-100/75 font-bold '
+                    : 'text-emerald-900 bg-emerald-100/75 font-bold ';
                 } else if (isNonPivotCol) {
                   cellClass += isChosenZ
                     ? 'text-rose-800 bg-rose-50/60 font-bold '
@@ -492,22 +516,11 @@ export const MatrixStepViewer: React.FC<MatrixStepViewerProps> = ({
                 } else {
                   cellClass += 'text-slate-500 bg-slate-50/50 ';
                 }
-                if (isDimmedCol) {
-                  cellClass += 'opacity-40 ';
-                }
 
                 return (
                   <td
                     key={cIdx}
                     className={cellClass}
-                    onMouseEnter={() => {
-                      if (isNonPivotCol) onHoverColQubit?.(colLabels[cIdx]);
-                      else onHoverRow?.(pivotColToRow.get(cIdx) ?? null);
-                    }}
-                    onMouseLeave={() => {
-                      if (isNonPivotCol) onHoverColQubit?.(null);
-                      else onHoverRow?.(null);
-                    }}
                   >
                     {wCol}
                   </td>
@@ -529,8 +542,6 @@ export const MatrixStepViewer: React.FC<MatrixStepViewerProps> = ({
                 const isPivotCol = pivotColToRow.has(cIdx);
                 const isNonPivotCol = !isPivotCol;
                 const isColHighlighted = highlightedColIdx === cIdx;
-                const isDimmedCol =
-                  highlightedColIdx !== null && !isColHighlighted;
 
                 let cellClass =
                   'py-1 px-1 text-center font-semibold transition-all duration-150 ';
@@ -538,8 +549,8 @@ export const MatrixStepViewer: React.FC<MatrixStepViewerProps> = ({
                   cellClass += 'text-slate-300 bg-slate-50/30 ';
                 } else if (isColHighlighted) {
                   cellClass += isChosenZ
-                    ? 'text-rose-950 bg-rose-100 font-black '
-                    : 'text-emerald-950 bg-emerald-100 font-black ';
+                    ? 'text-rose-900 bg-rose-100/75 font-bold '
+                    : 'text-emerald-900 bg-emerald-100/75 font-bold ';
                 } else {
                   cellClass += isChosenZ
                     ? fCol > 0
@@ -548,9 +559,6 @@ export const MatrixStepViewer: React.FC<MatrixStepViewerProps> = ({
                     : fCol > 0
                     ? 'text-emerald-700 bg-emerald-50/40'
                     : 'text-slate-400 bg-emerald-50/30';
-                }
-                if (isDimmedCol) {
-                  cellClass += 'opacity-40 ';
                 }
 
                 return (

@@ -312,18 +312,7 @@ export const BipartiteZxView: React.FC<BipartiteZxViewProps> = ({
                     : 'fill-emerald-900';
 
                 return (
-                  <g
-                    key={`qubit-wire-${q}`}
-                    onMouseEnter={() => {
-                      if (type === 'row' && rIdx !== null) handleRowEnter(rIdx);
-                      if (type === 'col' && npIdx !== null) handleColEnter(npIdx);
-                    }}
-                    onMouseLeave={() => {
-                      if (type === 'row') handleRowLeave();
-                      if (type === 'col') handleColLeave();
-                    }}
-                    className="cursor-pointer"
-                  >
+                  <g key={`qubit-wire-${q}`}>
                     <line
                       x1={pos.x}
                       y1={pos.y}

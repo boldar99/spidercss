@@ -103,16 +103,9 @@ export const StudioShell: React.FC = () => {
               <BookOpen className="w-6 h-6" />
             </div>
             <div className="flex-1 min-w-0">
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-base sm:text-lg font-bold text-slate-900">
-                  Step-by-Step Walkthrough
-                </span>
-                {mode === 'walkthrough' && (
-                  <span className="px-2.5 py-0.5 rounded-full text-[11px] font-mono font-bold uppercase bg-emerald-700 text-white tracking-wide">
-                    Active
-                  </span>
-                )}
-              </div>
+              <span className="text-base sm:text-lg font-bold text-slate-900">
+                Step-by-Step Walkthrough
+              </span>
               <p className="text-xs sm:text-sm text-slate-600 mt-1.5 leading-relaxed">
                 Explore the paper's theory across all 5 phases: bipartite ZX diagrams, column permutations, Gaussian elimination, and DAG graph alignment.
               </p>
@@ -138,16 +131,9 @@ export const StudioShell: React.FC = () => {
               <Sliders className="w-6 h-6" />
             </div>
             <div className="flex-1 min-w-0">
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-base sm:text-lg font-bold text-slate-900">
-                  Full Compiler GUI
-                </span>
-                {mode === 'gui' && (
-                  <span className="px-2.5 py-0.5 rounded-full text-[11px] font-mono font-bold uppercase bg-emerald-700 text-white tracking-wide">
-                    Active
-                  </span>
-                )}
-              </div>
+              <span className="text-base sm:text-lg font-bold text-slate-900">
+                Full Compiler GUI
+              </span>
               <p className="text-xs sm:text-sm text-slate-600 mt-1.5 leading-relaxed">
                 Direct state synthesis interface: specify your code, set <code className="font-mono text-xs bg-slate-100 px-1 py-0.5 rounded">max_basis_tries</code> and edge ordering heuristic to compile and export circuits immediately.
               </p>

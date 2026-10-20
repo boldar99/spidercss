@@ -156,11 +156,6 @@ export const StabilizerEditor: React.FC<StabilizerEditorProps> = ({
           </div>
 
           <div className="flex items-center gap-1.5">
-            {isActiveBasisMatrix && (
-              <span className="text-[11px] font-mono font-semibold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300 inline-flex items-center gap-1">
-                Active M for <LogicalKet basis={basis} k={validation.k} />
-              </span>
-            )}
             <button
               type="button"
               onClick={() => handleAddRow(which)}
@@ -359,7 +354,7 @@ export const StabilizerEditor: React.FC<StabilizerEditorProps> = ({
           )}
         </div>
       ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
           <div className="lg:col-span-7 rounded-xl border border-slate-200 bg-slate-50/60 p-4">
             <div className="flex items-center justify-between mb-2">
               <label className="text-xs font-semibold text-slate-700">
@@ -397,69 +392,67 @@ export const StabilizerEditor: React.FC<StabilizerEditorProps> = ({
             )}
           </div>
 
-          <div className="lg:col-span-5 rounded-xl border border-slate-200 bg-white p-4 flex flex-col justify-between">
-            <div>
-              <div className="text-xs font-semibold text-slate-800 mb-2">
-                Parsed CSS Stabilizer Tableau ({H_x.length} X-gens, {H_z.length} Z-gens)
-              </div>
-              <div className="max-h-56 overflow-y-auto custom-scrollbar space-y-1.5 pr-1">
-                {generatedPauli.xStrings.map((s, idx) => (
-                  <div
-                    key={`x-${idx}`}
-                    className={`flex items-center justify-between px-2.5 py-1 rounded-md font-mono text-xs border ${
-                      anticommutingXRows.has(idx)
-                        ? 'bg-rose-50 border-rose-300 text-rose-900'
-                        : 'bg-rose-50/40 border-rose-200/70 text-rose-900'
-                    }`}
-                  >
-                    <span className="text-[10px] text-rose-600 font-semibold mr-2">
-                      S<sub>X,{idx}</sub>
-                    </span>
-                    <span className="tracking-widest truncate">
-                      {Array.from(s).map((ch, cIdx) => (
-                        <span
-                          key={cIdx}
-                          className={
-                            ch === 'X'
-                              ? 'font-bold text-rose-700'
-                              : 'text-slate-300'
-                          }
-                        >
-                          {ch}
-                        </span>
-                      ))}
-                    </span>
-                  </div>
-                ))}
-                {generatedPauli.zStrings.map((s, idx) => (
-                  <div
-                    key={`z-${idx}`}
-                    className={`flex items-center justify-between px-2.5 py-1 rounded-md font-mono text-xs border ${
-                      anticommutingZRows.has(idx)
-                        ? 'bg-rose-50 border-rose-300 text-rose-900'
-                        : 'bg-emerald-50/40 border-emerald-200/70 text-emerald-900'
-                    }`}
-                  >
-                    <span className="text-[10px] text-emerald-700 font-semibold mr-2">
-                      S<sub>Z,{idx}</sub>
-                    </span>
-                    <span className="tracking-widest truncate">
-                      {Array.from(s).map((ch, cIdx) => (
-                        <span
-                          key={cIdx}
-                          className={
-                            ch === 'Z'
-                              ? 'font-bold text-emerald-700'
-                              : 'text-slate-300'
-                          }
-                        >
-                          {ch}
-                        </span>
-                      ))}
-                    </span>
-                  </div>
-                ))}
-              </div>
+          <div className="lg:col-span-5 rounded-xl border border-slate-200 bg-white p-4 flex flex-col">
+            <div className="text-xs font-semibold text-slate-800 mb-2">
+              Parsed CSS Stabilizer Tableau ({H_x.length} X-gens, {H_z.length} Z-gens)
+            </div>
+            <div className="max-h-80 overflow-y-auto custom-scrollbar space-y-1.5 pr-1">
+              {generatedPauli.xStrings.map((s, idx) => (
+                <div
+                  key={`x-${idx}`}
+                  className={`flex items-center justify-between px-2.5 py-1 rounded-md font-mono text-xs border ${
+                    anticommutingXRows.has(idx)
+                      ? 'bg-rose-50 border-rose-300 text-rose-900'
+                      : 'bg-rose-50/40 border-rose-200/70 text-rose-900'
+                  }`}
+                >
+                  <span className="text-[10px] text-rose-600 font-semibold mr-2">
+                    S<sub>X,{idx}</sub>
+                  </span>
+                  <span className="tracking-widest truncate">
+                    {Array.from(s).map((ch, cIdx) => (
+                      <span
+                        key={cIdx}
+                        className={
+                          ch === 'X'
+                            ? 'font-bold text-rose-700'
+                            : 'text-slate-300'
+                        }
+                      >
+                        {ch}
+                      </span>
+                    ))}
+                  </span>
+                </div>
+              ))}
+              {generatedPauli.zStrings.map((s, idx) => (
+                <div
+                  key={`z-${idx}`}
+                  className={`flex items-center justify-between px-2.5 py-1 rounded-md font-mono text-xs border ${
+                    anticommutingZRows.has(idx)
+                      ? 'bg-rose-50 border-rose-300 text-rose-900'
+                      : 'bg-emerald-50/40 border-emerald-200/70 text-emerald-900'
+                  }`}
+                >
+                  <span className="text-[10px] text-emerald-700 font-semibold mr-2">
+                    S<sub>Z,{idx}</sub>
+                  </span>
+                  <span className="tracking-widest truncate">
+                    {Array.from(s).map((ch, cIdx) => (
+                      <span
+                        key={cIdx}
+                        className={
+                          ch === 'Z'
+                            ? 'font-bold text-emerald-700'
+                            : 'text-slate-300'
+                        }
+                      >
+                        {ch}
+                      </span>
+                    ))}
+                  </span>
+                </div>
+              ))}
             </div>
 
             <div className="mt-3 pt-3 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-500">
