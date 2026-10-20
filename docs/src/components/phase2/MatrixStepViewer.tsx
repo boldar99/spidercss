@@ -15,6 +15,10 @@ interface MatrixStepViewerProps {
   t: number;
   basis: BasisType;
   onCustomPermutation?: (perm: number[]) => void;
+  highlightedRow?: number | null;
+  highlightedColQubit?: number | null;
+  onHoverRow?: (rIdx: number | null) => void;
+  onHoverColQubit?: (colQubit: number | null) => void;
 }
 
 export const MatrixStepViewer: React.FC<MatrixStepViewerProps> = ({
@@ -24,6 +28,10 @@ export const MatrixStepViewer: React.FC<MatrixStepViewerProps> = ({
   t,
   basis,
   onCustomPermutation,
+  highlightedRow = null,
+  highlightedColQubit = null,
+  onHoverRow,
+  onHoverColQubit,
 }) => {
   const [selectedSwapCol, setSelectedSwapCol] = useState<number | null>(null);
 
@@ -106,6 +114,15 @@ export const MatrixStepViewer: React.FC<MatrixStepViewerProps> = ({
     return map;
   }, [pivots]);
 
+  const isChosenZ = basis === 'Z';
+
+  // Find column index in current table corresponding to highlightedColQubit
+  const highlightedColIdx = useMemo(() => {
+    if (highlightedColQubit === null || highlightedColQubit === undefined) return null;
+    const idx = colLabels.indexOf(highlightedColQubit);
+    return idx !== -1 ? idx : null;
+  }, [highlightedColQubit, colLabels]);
+
   const handleColHeaderClick = (colPos: number) => {
     if (!onCustomPermutation) return;
     if (selectedSwapCol === null) {
@@ -124,6 +141,7 @@ export const MatrixStepViewer: React.FC<MatrixStepViewerProps> = ({
 
   const rows = matrix.length;
   const cols = matrix[0]?.length ?? 0;
+  const nonPivotColCount = Math.max(0, cols - pivotColToRow.size);
 
   return (
     <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-4">
@@ -138,11 +156,39 @@ export const MatrixStepViewer: React.FC<MatrixStepViewerProps> = ({
           </span>
         </div>
 
-        <div className="flex items-center gap-3 text-[11px] font-mono">
-          <span className="inline-flex items-center gap-1.5 text-emerald-800 bg-emerald-100/80 border border-emerald-300 px-2 py-0.5 rounded-md font-semibold">
-            <span className="w-2 h-2 rounded-xs bg-emerald-600"></span>
-            Pivot Cols ({pivotColToRow.size}/{rows})
+        <div className="flex items-center gap-2.5 text-[11px] font-mono flex-wrap">
+          <span
+            className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md font-semibold border ${
+              isChosenZ
+                ? 'text-emerald-800 bg-emerald-100/80 border-emerald-300'
+                : 'text-rose-800 bg-rose-100/80 border-rose-300'
+            }`}
+            title="Rows with a unique-1 pivot (row spiders in chosen basis)"
+          >
+            <span
+              className={`w-2 h-2 rounded-xs ${
+                isChosenZ ? 'bg-emerald-600' : 'bg-rose-600'
+              }`}
+            />
+            Pivot Rows ({pivotColToRow.size}/{rows})
           </span>
+
+          <span
+            className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md font-semibold border ${
+              isChosenZ
+                ? 'text-rose-800 bg-rose-100/80 border-rose-300'
+                : 'text-emerald-800 bg-emerald-100/80 border-emerald-300'
+            }`}
+            title="Columns without pivots (column spiders in complementary basis)"
+          >
+            <span
+              className={`w-2 h-2 rounded-xs ${
+                isChosenZ ? 'bg-rose-500' : 'bg-emerald-600'
+              }`}
+            />
+            Non-Pivot Cols ({nonPivotColCount})
+          </span>
+
           <span className="text-slate-500">
             Active: <strong className="text-slate-800">{basis === 'Z' ? 'H_X' : 'H_Z'}</strong>
           </span>
@@ -185,7 +231,7 @@ export const MatrixStepViewer: React.FC<MatrixStepViewerProps> = ({
         </span>
       </div>
 
-      {/* Matrix Table with Pivot Highlights, Row Weights w_j, and Column Weights w_i */}
+      {/* Matrix Table with Complementary Non-Pivot Col Highlights, Chosen Pivot Row Highlights, and Bi-Directional Cross-Highlighting */}
       <div className="overflow-x-auto custom-scrollbar pb-1">
         <table className="border-collapse font-mono text-xs w-full">
           <thead>
@@ -193,14 +239,48 @@ export const MatrixStepViewer: React.FC<MatrixStepViewerProps> = ({
               <th className="py-1.5 pr-2 text-left font-normal">Row</th>
               {colLabels.map((qIdx, cIdx) => {
                 const isPivotCol = pivotColToRow.has(cIdx);
+                const isNonPivotCol = !isPivotCol;
+                const isColHighlighted = highlightedColIdx === cIdx;
+                const isAnyColHighlighted = highlightedColIdx !== null;
+                const isDimmedCol = isAnyColHighlighted && !isColHighlighted;
+
+                let thClass =
+                  'px-1 py-1.5 text-center font-semibold min-w-[24px] rounded-t transition-all duration-150 cursor-pointer select-none ';
+                if (isColHighlighted) {
+                  thClass += isChosenZ
+                    ? 'bg-rose-200 text-rose-950 ring-2 ring-rose-500 font-black shadow-xs '
+                    : 'bg-emerald-200 text-emerald-950 ring-2 ring-emerald-500 font-black shadow-xs ';
+                } else if (isNonPivotCol) {
+                  thClass += isChosenZ
+                    ? 'bg-rose-100/75 text-rose-900 border-b-2 border-rose-300 hover:bg-rose-100 '
+                    : 'bg-emerald-100/75 text-emerald-900 border-b-2 border-emerald-300 hover:bg-emerald-100 ';
+                } else {
+                  // Pivot column: neutral, not highlighted green
+                  thClass += 'text-slate-600 bg-slate-100/50 hover:bg-slate-100 border-b border-slate-200 ';
+                }
+                if (isDimmedCol) {
+                  thClass += 'opacity-40 ';
+                }
+
                 return (
                   <th
                     key={cIdx}
-                    className={`px-1 py-1.5 text-center font-semibold min-w-[24px] rounded-t ${
-                      isPivotCol
-                        ? 'bg-emerald-100/70 text-emerald-900'
-                        : 'text-slate-500'
-                    }`}
+                    className={thClass}
+                    onMouseEnter={() => {
+                      if (isNonPivotCol) {
+                        onHoverColQubit?.(qIdx);
+                      } else {
+                        const r = pivotColToRow.get(cIdx);
+                        if (r !== undefined) onHoverRow?.(r);
+                      }
+                    }}
+                    onMouseLeave={() => {
+                      if (isNonPivotCol) {
+                        onHoverColQubit?.(null);
+                      } else {
+                        onHoverRow?.(null);
+                      }
+                    }}
                   >
                     <div>
                       q<sub>{qIdx}</sub>
@@ -216,7 +296,11 @@ export const MatrixStepViewer: React.FC<MatrixStepViewerProps> = ({
               <th className="pl-2.5 py-1.5 text-right font-semibold text-slate-600 whitespace-nowrap">
                 <KaTeXMath tex="w_j" />
               </th>
-              <th className="pl-2 py-1.5 text-right font-semibold text-emerald-800 whitespace-nowrap">
+              <th
+                className={`pl-2 py-1.5 text-right font-semibold whitespace-nowrap ${
+                  isChosenZ ? 'text-emerald-800' : 'text-rose-800'
+                }`}
+              >
                 <KaTeXMath tex="f(w_j,t)" />
               </th>
             </tr>
@@ -227,24 +311,58 @@ export const MatrixStepViewer: React.FC<MatrixStepViewerProps> = ({
               const wRow = cost.rowWeights[rIdx] ?? 0;
               const fRow = cost.rowFlagsPerSpider[rIdx] ?? 0;
               const pivotColForThisRow = pivots[rIdx];
+              const hasPivot = pivotColForThisRow !== undefined;
+              const isRowHighlighted = highlightedRow === rIdx;
+              const isAnyRowHighlighted = highlightedRow !== null;
+              const isDimmedRow = isAnyRowHighlighted && !isRowHighlighted;
+
+              let trClass = 'transition-all duration-150 ';
+              if (isRowHighlighted) {
+                trClass += isChosenZ
+                  ? 'bg-emerald-100/90 ring-2 ring-emerald-500 font-semibold shadow-xs '
+                  : 'bg-rose-100/90 ring-2 ring-rose-500 font-semibold shadow-xs ';
+              } else if (hasPivot) {
+                trClass += isChosenZ
+                  ? 'bg-emerald-50/35 hover:bg-emerald-50/70 '
+                  : 'bg-rose-50/35 hover:bg-rose-50/70 ';
+              } else {
+                trClass += 'hover:bg-slate-50 ';
+              }
+              if (isDimmedRow) {
+                trClass += 'opacity-40 ';
+              }
 
               return (
                 <tr
                   key={rIdx}
-                  className="transition-colors hover:bg-white/80"
+                  className={trClass}
+                  onMouseEnter={() => onHoverRow?.(rIdx)}
+                  onMouseLeave={() => onHoverRow?.(null)}
                 >
                   <td className="py-1 pr-2 text-[11px] whitespace-nowrap">
                     <div className="flex items-center gap-1">
                       <span
-                        className={`font-semibold ${
-                          basis === 'Z' ? 'text-emerald-800' : 'text-rose-800'
+                        className={`px-1.5 py-0.5 rounded text-[11px] font-bold transition-all ${
+                          isRowHighlighted
+                            ? isChosenZ
+                              ? 'bg-emerald-600 text-white shadow-xs'
+                              : 'bg-rose-600 text-white shadow-xs'
+                            : hasPivot
+                            ? isChosenZ
+                              ? 'text-emerald-900 bg-emerald-100/80 border border-emerald-300'
+                              : 'text-rose-900 bg-rose-100/80 border border-rose-300'
+                            : 'text-slate-600 bg-slate-100'
                         }`}
                       >
                         {basis === 'Z' ? 'Z' : 'X'}
                         <sub>{rIdx}</sub>
                       </span>
                       {pivotColForThisRow !== undefined && (
-                        <span className="text-[10px] text-emerald-600">
+                        <span
+                          className={`text-[10px] font-medium ${
+                            isChosenZ ? 'text-emerald-700' : 'text-rose-700'
+                          }`}
+                        >
                           (q<sub>{colLabels[pivotColForThisRow]}</sub>)
                         </span>
                       )}
@@ -253,27 +371,62 @@ export const MatrixStepViewer: React.FC<MatrixStepViewerProps> = ({
 
                   {row.map((bit, cIdx) => {
                     const isPivotCol = pivotColToRow.has(cIdx);
+                    const isNonPivotCol = !isPivotCol;
                     const isUniquePivotOne =
                       pivots[rIdx] === cIdx && bit === 1;
+                    const isColHighlighted = highlightedColIdx === cIdx;
+                    const isCellInHighlightedRow = isRowHighlighted;
+
+                    let tdBg = '';
+                    if (isColHighlighted) {
+                      tdBg = isChosenZ
+                        ? 'bg-rose-100/80 ring-1 ring-rose-300'
+                        : 'bg-emerald-100/80 ring-1 ring-emerald-300';
+                    } else if (isCellInHighlightedRow) {
+                      tdBg = isChosenZ ? 'bg-emerald-100/70' : 'bg-rose-100/70';
+                    } else if (isNonPivotCol) {
+                      tdBg = isChosenZ ? 'bg-rose-50/50' : 'bg-emerald-50/50';
+                    }
+
+                    const isAnyHighlight =
+                      highlightedRow !== null || highlightedColIdx !== null;
+                    const isDimmedCell =
+                      isAnyHighlight &&
+                      !isCellInHighlightedRow &&
+                      !isColHighlighted;
 
                     return (
                       <td
                         key={cIdx}
-                        className={`p-0.5 text-center ${
-                          isPivotCol ? 'bg-emerald-50/60' : ''
+                        className={`p-0.5 text-center transition-all duration-150 ${tdBg} ${
+                          isDimmedCell ? 'opacity-40' : ''
                         }`}
                       >
                         <span
                           className={`inline-flex items-center justify-center w-6 h-6 rounded text-xs font-semibold transition-all ${
                             isUniquePivotOne
-                              ? 'bg-emerald-600 text-white shadow-2xs ring-2 ring-emerald-300 font-bold'
+                              ? isChosenZ
+                                ? `bg-emerald-600 text-white shadow-2xs ring-2 ring-emerald-300 font-bold ${
+                                    isCellInHighlightedRow || isColHighlighted
+                                      ? 'scale-110 ring-emerald-400 shadow-sm'
+                                      : ''
+                                  }`
+                                : `bg-rose-600 text-white shadow-2xs ring-2 ring-rose-300 font-bold ${
+                                    isCellInHighlightedRow || isColHighlighted
+                                      ? 'scale-110 ring-rose-400 shadow-sm'
+                                      : ''
+                                  }`
                               : bit === 1
-                              ? 'bg-purple-100 text-purple-900 border border-purple-300 font-bold'
+                              ? isCellInHighlightedRow || isColHighlighted
+                                ? 'bg-purple-200 text-purple-950 ring-2 ring-purple-400 font-black shadow-xs scale-105'
+                                : 'bg-purple-100 text-purple-900 border border-purple-300 font-bold'
                               : 'text-slate-300'
                           }`}
                           title={
                             isUniquePivotOne
-                              ? `Unique-one pivot at row ${rIdx}, column q_${colLabels[cIdx]}`
+                              ? `Unique-one pivot at row ${rIdx}, column q_${colLabels[cIdx]} (${
+                                  isChosenZ ? 'Z-spider pivot' : 'X-spider pivot'
+                                })`
                               : bit === 1
                               ? `Non-pivot internal connection (row ${rIdx}, col q_${colLabels[cIdx]})`
                               : '0'
@@ -285,10 +438,26 @@ export const MatrixStepViewer: React.FC<MatrixStepViewerProps> = ({
                     );
                   })}
 
-                  <td className="pl-2.5 py-1 text-right font-semibold text-slate-700">
+                  <td
+                    className={`pl-2.5 py-1 text-right font-semibold ${
+                      hasPivot
+                        ? isChosenZ
+                          ? 'text-emerald-900'
+                          : 'text-rose-900'
+                        : 'text-slate-700'
+                    }`}
+                  >
                     {wRow}
                   </td>
-                  <td className="pl-2 py-1 text-right font-semibold text-emerald-700">
+                  <td
+                    className={`pl-2 py-1 text-right font-semibold ${
+                      hasPivot
+                        ? isChosenZ
+                          ? 'text-emerald-700'
+                          : 'text-rose-700'
+                        : 'text-slate-500'
+                    }`}
+                  >
                     {fRow > 0 ? `+${fRow}` : '0'}
                   </td>
                 </tr>
@@ -305,40 +474,87 @@ export const MatrixStepViewer: React.FC<MatrixStepViewerProps> = ({
               {Array.from({ length: cols }, (_, cIdx) => {
                 const wCol = cost.colWeights[cIdx] ?? 0;
                 const isPivotCol = pivotColToRow.has(cIdx);
+                const isNonPivotCol = !isPivotCol;
+                const isColHighlighted = highlightedColIdx === cIdx;
+                const isDimmedCol =
+                  highlightedColIdx !== null && !isColHighlighted;
+
+                let cellClass =
+                  'py-1.5 px-1 text-center font-semibold transition-all duration-150 ';
+                if (isColHighlighted) {
+                  cellClass += isChosenZ
+                    ? 'text-rose-950 bg-rose-200 ring-1 ring-rose-400 font-black '
+                    : 'text-emerald-950 bg-emerald-200 ring-1 ring-emerald-400 font-black ';
+                } else if (isNonPivotCol) {
+                  cellClass += isChosenZ
+                    ? 'text-rose-800 bg-rose-50/60 font-bold '
+                    : 'text-emerald-800 bg-emerald-50/60 font-bold ';
+                } else {
+                  cellClass += 'text-slate-500 bg-slate-50/50 ';
+                }
+                if (isDimmedCol) {
+                  cellClass += 'opacity-40 ';
+                }
+
                 return (
                   <td
                     key={cIdx}
-                    className={`py-1.5 px-1 text-center font-semibold ${
-                      isPivotCol
-                        ? 'text-emerald-700 bg-emerald-50/60'
-                        : 'text-rose-800'
-                    }`}
+                    className={cellClass}
+                    onMouseEnter={() => {
+                      if (isNonPivotCol) onHoverColQubit?.(colLabels[cIdx]);
+                      else onHoverRow?.(pivotColToRow.get(cIdx) ?? null);
+                    }}
+                    onMouseLeave={() => {
+                      if (isNonPivotCol) onHoverColQubit?.(null);
+                      else onHoverRow?.(null);
+                    }}
                   >
                     {wCol}
                   </td>
                 );
               })}
               <td className="pl-2.5 py-1.5 text-right text-slate-400">—</td>
-              <td className="pl-2 py-1.5 text-right text-slate-400">—</td>
+              <td className="pl-2.5 py-1.5 text-right text-slate-400">—</td>
             </tr>
             <tr className="border-t border-slate-100 text-[10px] bg-white/70">
-              <td className="py-1 pr-2 font-semibold text-rose-800 whitespace-nowrap">
+              <td
+                className={`py-1 pr-2 font-semibold whitespace-nowrap ${
+                  isChosenZ ? 'text-rose-800' : 'text-emerald-800'
+                }`}
+              >
                 <KaTeXMath tex="f(w_i{+}1,t)" />
               </td>
               {Array.from({ length: cols }, (_, cIdx) => {
                 const fCol = cost.colFlagsPerSpider[cIdx] ?? 0;
                 const isPivotCol = pivotColToRow.has(cIdx);
+                const isNonPivotCol = !isPivotCol;
+                const isColHighlighted = highlightedColIdx === cIdx;
+                const isDimmedCol =
+                  highlightedColIdx !== null && !isColHighlighted;
+
+                let cellClass =
+                  'py-1 px-1 text-center font-semibold transition-all duration-150 ';
+                if (isPivotCol) {
+                  cellClass += 'text-slate-300 bg-slate-50/30 ';
+                } else if (isColHighlighted) {
+                  cellClass += isChosenZ
+                    ? 'text-rose-950 bg-rose-100 font-black '
+                    : 'text-emerald-950 bg-emerald-100 font-black ';
+                } else {
+                  cellClass += isChosenZ
+                    ? fCol > 0
+                      ? 'text-rose-700 bg-rose-50/40'
+                      : 'text-slate-400 bg-rose-50/30'
+                    : fCol > 0
+                    ? 'text-emerald-700 bg-emerald-50/40'
+                    : 'text-slate-400 bg-emerald-50/30';
+                }
+                if (isDimmedCol) {
+                  cellClass += 'opacity-40 ';
+                }
+
                 return (
-                  <td
-                    key={cIdx}
-                    className={`py-1 px-1 text-center font-semibold ${
-                      isPivotCol
-                        ? 'text-slate-300 bg-emerald-50/40'
-                        : fCol > 0
-                        ? 'text-rose-700'
-                        : 'text-slate-400'
-                    }`}
-                  >
+                  <td key={cIdx} className={cellClass}>
                     {isPivotCol ? '·' : fCol > 0 ? `+${fCol}` : '0'}
                   </td>
                 );
@@ -358,12 +574,36 @@ export const MatrixStepViewer: React.FC<MatrixStepViewerProps> = ({
       <div className="mt-3 pt-2.5 border-t border-slate-200/70 flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-500">
         <div className="flex flex-wrap items-center gap-3">
           <span className="inline-flex items-center gap-1.5">
-            <span className="w-3 h-3 rounded-xs bg-emerald-600 inline-block"></span>
-            Unique-1 Pivot (Boundary wire to row spider)
+            <span
+              className={`w-3 h-3 rounded-xs inline-block ${
+                isChosenZ ? 'bg-emerald-600' : 'bg-rose-600'
+              }`}
+            />
+            Unique-1 Pivot ({isChosenZ ? 'Z-Spider' : 'X-Spider'})
           </span>
           <span className="inline-flex items-center gap-1.5">
-            <span className="w-3 h-3 rounded-xs bg-purple-100 border border-purple-300 inline-block"></span>
-            Non-Pivot 1 (Idealized bipartite edge)
+            <span
+              className={`w-3 h-3 rounded-xs border inline-block ${
+                isChosenZ
+                  ? 'bg-emerald-100 border-emerald-300'
+                  : 'bg-rose-100 border-rose-300'
+              }`}
+            />
+            Pivot Row ({isChosenZ ? 'Green |0̄⟩' : 'Red |+̄⟩'})
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <span
+              className={`w-3 h-3 rounded-xs border inline-block ${
+                isChosenZ
+                  ? 'bg-rose-100 border-rose-300'
+                  : 'bg-emerald-100 border-emerald-300'
+              }`}
+            />
+            Non-Pivot Column ({isChosenZ ? 'Red |+̄⟩ comp.' : 'Green |0̄⟩ comp.'})
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <span className="w-3 h-3 rounded-xs bg-purple-100 border border-purple-300 inline-block" />
+            Non-Pivot 1 (Idealized Bipartite Edge)
           </span>
         </div>
       </div>

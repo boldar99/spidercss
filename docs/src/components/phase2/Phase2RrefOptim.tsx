@@ -44,6 +44,8 @@ export const Phase2RrefOptim: React.FC = () => {
   } = state;
 
   const [optimRunCount, setOptimRunCount] = useState(0);
+  const [highlightedRow, setHighlightedRow] = useState<number | null>(null);
+  const [highlightedColQubit, setHighlightedColQubit] = useState<number | null>(null);
 
   const handleRunMonteCarloOptimizer = () => {
     if (isOptimizingBasis) return;
@@ -380,6 +382,10 @@ export const Phase2RrefOptim: React.FC = () => {
             t={validation.t}
             basis={basis}
             onCustomPermutation={(perm) => generateNewPermutationTrial(perm)}
+            highlightedRow={highlightedRow}
+            highlightedColQubit={highlightedColQubit}
+            onHoverRow={setHighlightedRow}
+            onHoverColQubit={setHighlightedColQubit}
           />
 
           <BipartiteZxView
@@ -389,6 +395,10 @@ export const Phase2RrefOptim: React.FC = () => {
             cost={rrefSnapshot.cost}
             basis={basis}
             t={validation.t}
+            highlightedRow={highlightedRow}
+            highlightedColQubit={highlightedColQubit}
+            onHoverRow={setHighlightedRow}
+            onHoverColQubit={setHighlightedColQubit}
           />
         </div>
       </div>

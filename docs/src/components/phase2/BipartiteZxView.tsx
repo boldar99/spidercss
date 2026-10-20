@@ -10,6 +10,10 @@ interface BipartiteZxViewProps {
   basis: BasisType;
   t: number;
   unidealized?: boolean;
+  highlightedRow?: number | null;
+  highlightedColQubit?: number | null;
+  onHoverRow?: (rIdx: number | null) => void;
+  onHoverColQubit?: (colQubit: number | null) => void;
 }
 
 export const BipartiteZxView: React.FC<BipartiteZxViewProps> = ({
@@ -20,9 +24,13 @@ export const BipartiteZxView: React.FC<BipartiteZxViewProps> = ({
   basis,
   t,
   unidealized = false,
+  highlightedRow,
+  highlightedColQubit,
+  onHoverRow,
+  onHoverColQubit,
 }) => {
-  const [hoveredRow, setHoveredRow] = useState<number | null>(null);
-  const [hoveredColIdx, setHoveredColIdx] = useState<number | null>(null);
+  const [internalHoveredRow, setInternalHoveredRow] = useState<number | null>(null);
+  const [internalHoveredColIdx, setInternalHoveredColIdx] = useState<number | null>(null);
 
   const numRows = matrix.length;
   const numNonPivots = nonPivots.length;
@@ -48,6 +56,41 @@ export const BipartiteZxView: React.FC<BipartiteZxViewProps> = ({
 
     return { rowToQubit: rToQ, qubitToRow: qToR, colToQubit: cToQ, qubitToCol: qToC };
   }, [numRows, numNonPivots, pivots, nonPivots]);
+
+  // Unified hovered row and column index (combining props and local hover state)
+  const hoveredRow =
+    highlightedRow !== undefined ? highlightedRow : internalHoveredRow;
+
+  const hoveredColIdx = useMemo(() => {
+    if (highlightedColQubit !== undefined) {
+      if (highlightedColQubit === null) return null;
+      return qubitToCol.get(highlightedColQubit) ?? null;
+    }
+    return internalHoveredColIdx;
+  }, [highlightedColQubit, qubitToCol, internalHoveredColIdx]);
+
+  const handleRowEnter = (rIdx: number) => {
+    setInternalHoveredRow(rIdx);
+    onHoverRow?.(rIdx);
+  };
+
+  const handleRowLeave = () => {
+    setInternalHoveredRow(null);
+    onHoverRow?.(null);
+  };
+
+  const handleColEnter = (npIdx: number) => {
+    setInternalHoveredColIdx(npIdx);
+    const colQ = colToQubit.get(npIdx);
+    if (colQ !== undefined) {
+      onHoverColQubit?.(colQ);
+    }
+  };
+
+  const handleColLeave = () => {
+    setInternalHoveredColIdx(null);
+    onHoverColQubit?.(null);
+  };
 
   // Compute SVG geometry with qubits ordered by qubit index q = 0 .. totalQubits - 1 vertically.
   // Row spiders are placed on the left column (x = rowX) at y = getY(pivotQ).
@@ -272,12 +315,12 @@ export const BipartiteZxView: React.FC<BipartiteZxViewProps> = ({
                   <g
                     key={`qubit-wire-${q}`}
                     onMouseEnter={() => {
-                      if (type === 'row' && rIdx !== null) setHoveredRow(rIdx);
-                      if (type === 'col' && npIdx !== null) setHoveredColIdx(npIdx);
+                      if (type === 'row' && rIdx !== null) handleRowEnter(rIdx);
+                      if (type === 'col' && npIdx !== null) handleColEnter(npIdx);
                     }}
                     onMouseLeave={() => {
-                      if (type === 'row') setHoveredRow(null);
-                      if (type === 'col') setHoveredColIdx(null);
+                      if (type === 'row') handleRowLeave();
+                      if (type === 'col') handleColLeave();
                     }}
                     className="cursor-pointer"
                   >
@@ -338,21 +381,30 @@ export const BipartiteZxView: React.FC<BipartiteZxViewProps> = ({
                 const p = layout.rowPos(rIdx);
                 const wRow = cost.rowWeights[rIdx] ?? 0;
                 const isHovered = hoveredRow === rIdx;
+                const isSpiderDimmed =
+                  (hoveredRow !== null || hoveredColIdx !== null) && !isHovered;
 
                 return (
                   <g
                     key={`row-node-${rIdx}`}
-                    onMouseEnter={() => setHoveredRow(rIdx)}
-                    onMouseLeave={() => setHoveredRow(null)}
+                    onMouseEnter={() => handleRowEnter(rIdx)}
+                    onMouseLeave={() => handleRowLeave()}
                     className="cursor-pointer"
+                    opacity={isSpiderDimmed ? 0.38 : 1}
                   >
                     <circle
                       cx={p.x}
                       cy={p.y}
-                      r={isHovered ? 15 : 13}
+                      r={isHovered ? 16 : 13}
                       fill={rowFill}
                       stroke={rowStroke}
-                      strokeWidth={isHovered ? 2.8 : 2}
+                      strokeWidth={isHovered ? 3.2 : 2}
+                      style={{
+                        filter: isHovered
+                          ? 'drop-shadow(0 0 6px rgba(0,0,0,0.35))'
+                          : undefined,
+                        transition: 'all 0.15s ease',
+                      }}
                     />
                     <text
                       x={p.x}
@@ -384,21 +436,30 @@ export const BipartiteZxView: React.FC<BipartiteZxViewProps> = ({
                 const wCol = cost.colWeights[colQubit] ?? 0;
                 const deg = wCol + 1;
                 const isHovered = hoveredColIdx === npIdx;
+                const isSpiderDimmed =
+                  (hoveredRow !== null || hoveredColIdx !== null) && !isHovered;
 
                 return (
                   <g
                     key={`col-node-${colQubit}`}
-                    onMouseEnter={() => setHoveredColIdx(npIdx)}
-                    onMouseLeave={() => setHoveredColIdx(null)}
+                    onMouseEnter={() => handleColEnter(npIdx)}
+                    onMouseLeave={() => handleColLeave()}
                     className="cursor-pointer"
+                    opacity={isSpiderDimmed ? 0.38 : 1}
                   >
                     <circle
                       cx={p.x}
                       cy={p.y}
-                      r={isHovered ? 15 : 13}
+                      r={isHovered ? 16 : 13}
                       fill={colFill}
                       stroke={colStroke}
-                      strokeWidth={isHovered ? 2.8 : 2}
+                      strokeWidth={isHovered ? 3.2 : 2}
+                      style={{
+                        filter: isHovered
+                          ? 'drop-shadow(0 0 6px rgba(0,0,0,0.35))'
+                          : undefined,
+                        transition: 'all 0.15s ease',
+                      }}
                     />
                     <text
                       x={p.x}
