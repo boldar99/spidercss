@@ -16,7 +16,6 @@ import type { GlobalPipelineSetup } from '../../engine/spiderLegMatcher';
 import {
   computeGlobalTopologyLayout,
   buildUndirectedEdgePath,
-  NODE_RADIUS,
 } from '../phase3/globalTopologyLayout';
 import { Math as KaTeXMath } from '../common/Math';
 
@@ -40,9 +39,9 @@ const STAGE_META: Array<{
     id: 'b',
     shortTitle: '(b) 2D Grid-Aligned ZX',
     figureLabel: 'Fig. 7(b)',
-    subtitle: 'X = topological generation in D_global, Y = tree wire in F',
+    subtitle: 'Spiders positioned by causal generation in D_global & tree wire in F',
     description:
-      'The completed Global Graph from Phase 3: each spider is placed at its causal topological generation in D_global on horizontal qubit swimlanes, equipped with spanning forest F (bold), roots r_k (blue boxes), and external CNOTs (blue).',
+      '2D grid-aligned ZX diagram: each spider is placed at its causal topological generation from D_global and tree wire from F, showing spanning forest F (bold), roots r_k (blue boxes), and external CNOTs (blue).',
   },
   {
     id: 'c',
@@ -224,7 +223,7 @@ export const GridZxMorphCanvas: React.FC<GridZxMorphCanvasProps> = ({
     nodeOrder,
   ]);
 
-  // Stage (b): Use completed Global Graph layout from previous Phase (Phase 3)
+  // Stage (b): Spiders positioned according to the final complete G_global
   const completedGenerations = useMemo(() => {
     const lastSnap = pipeline.stepSnapshots[pipeline.stepSnapshots.length - 1];
     return lastSnap
@@ -343,9 +342,7 @@ export const GridZxMorphCanvas: React.FC<GridZxMorphCanvasProps> = ({
           {currentMeta.description}
         </div>
         <span className="font-mono text-[11px] text-slate-500 shrink-0">
-          {stage === 'b'
-            ? `${N} output qubits • ${globalLayout.numGens} generations`
-            : `${N} data wires + ${extractionData.totalWires - N} flag wires`}
+          {N} data wires + {extractionData.totalWires - N} flag wires
         </span>
       </div>
 
@@ -355,6 +352,157 @@ export const GridZxMorphCanvas: React.FC<GridZxMorphCanvasProps> = ({
           viewBox={`0 0 ${activeSvgWidth} ${activeSvgHeight}`}
           className="w-full min-w-[640px] h-auto select-none"
         >
+          {/* STAGE (b): 2D Grid-Aligned ZX (Using Spider Positions from Final Complete G_global) */}
+          {stage === 'b' && (
+            <g>
+              {/* 1. Data Qubit Horizontal Wire Guide Lines */}
+              {Array.from({ length: N }, (_, q) => {
+                const rootNodeId = globalRoots[q];
+                const rootPos = globalLayout.posMap.get(rootNodeId);
+                const y = rootPos ? rootPos.y : 38 + q * 34;
+                const rightX = globalLayout.rightBoundaryX;
+
+                return (
+                  <g key={`b-wire-guide-${q}`}>
+                    {/* Wire label on left */}
+                    <text
+                      x={16}
+                      y={y + 4}
+                      className="font-mono text-[10px] font-bold fill-emerald-800"
+                    >
+                      q_{q} (r_{q})
+                    </text>
+
+                    {/* Faint full-row track */}
+                    <line
+                      x1={78}
+                      y1={y}
+                      x2={rightX}
+                      y2={y}
+                      stroke="#f1f5f9"
+                      strokeWidth={1.5}
+                    />
+
+                    {/* Active data wire line from root to output boundary */}
+                    <line
+                      x1={rootPos ? rootPos.x : 78}
+                      y1={y}
+                      x2={rightX}
+                      y2={y}
+                      stroke="#0f172a"
+                      strokeWidth={2}
+                    />
+
+                    {/* Right boundary terminal circle & label */}
+                    <circle cx={rightX} cy={y} r={3} fill="#0f172a" />
+                    <text
+                      x={rightX + 8}
+                      y={y + 4}
+                      className="font-mono text-[10px] font-bold fill-slate-700"
+                    >
+                      q_{q}
+                    </text>
+                  </g>
+                );
+              })}
+
+              {/* 2. Internal Edges of baseGlobalG (Bold for Spanning Forest F, Dashed for cycle closures) */}
+              {internalEdges.map((e, idx) => {
+                const p1 = globalLayout.posMap.get(e.source);
+                const p2 = globalLayout.posMap.get(e.target);
+                if (!p1 || !p2) return null;
+                const inForest = hasUndirectedEdge(globalF, e.source, e.target);
+                const dPath = buildUndirectedEdgePath(p1.x, p1.y, p2.x, p2.y);
+                if (!dPath) return null;
+
+                return (
+                  <path
+                    key={`b-int-${idx}`}
+                    d={dPath}
+                    fill="none"
+                    stroke={inForest ? '#0f172a' : '#64748b'}
+                    strokeWidth={inForest ? 3 : 1.8}
+                    strokeDasharray={inForest ? undefined : '4,3'}
+                  />
+                );
+              })}
+
+              {/* 3. External CNOT Edges from Algorithm 1 */}
+              {pipeline.stepSnapshots.map((snap) => {
+                const pZ = globalLayout.posMap.get(snap.zGlobalNode);
+                const pX = globalLayout.posMap.get(snap.xGlobalNode);
+                if (!pZ || !pX) return null;
+                const dPath = buildUndirectedEdgePath(pZ.x, pZ.y, pX.x, pX.y);
+                if (!dPath) return null;
+
+                return (
+                  <path
+                    key={`b-cnot-${snap.stepIndex}`}
+                    d={dPath}
+                    fill="none"
+                    stroke="#0369a1"
+                    strokeWidth={2.4}
+                    strokeOpacity={0.85}
+                  />
+                );
+              })}
+
+              {/* 4. Spider Nodes & Root Highlights */}
+              {Array.from(globalLayout.posMap.entries()).map(([gId, pos]) => {
+                const isZ = pos.compKind === 'Z';
+                const fill = isZ ? rowFill : colFill;
+                const stroke = isZ ? rowStroke : colStroke;
+
+                return (
+                  <g key={`b-node-${gId}`}>
+                    {/* Root node blue square highlight */}
+                    {pos.isRoot && (
+                      <g>
+                        <rect
+                          x={pos.x - 13.5}
+                          y={pos.y - 13.5}
+                          width={27}
+                          height={27}
+                          rx={5}
+                          fill="none"
+                          stroke="#2563eb"
+                          strokeWidth={2.2}
+                        />
+                        <text
+                          x={pos.x}
+                          y={pos.y + 22}
+                          textAnchor="middle"
+                          fontSize={9}
+                          className="font-mono font-bold fill-blue-700"
+                        >
+                          r_{pos.rootTreeCol}
+                        </text>
+                      </g>
+                    )}
+
+                    <circle
+                      cx={pos.x}
+                      cy={pos.y}
+                      r={10}
+                      fill={fill}
+                      stroke={stroke}
+                      strokeWidth={2}
+                    />
+                    <text
+                      x={pos.x}
+                      y={pos.y + 3.5}
+                      textAnchor="middle"
+                      fontSize={9}
+                      className="font-mono font-bold fill-slate-900"
+                    >
+                      {gId}
+                    </text>
+                  </g>
+                );
+              })}
+            </g>
+          )}
+
           {/* Wire guide lines for Stages (c) and (d) */}
           {(stage === 'c' || stage === 'd') &&
             Array.from({ length: extractionData.totalWires }, (_, w) => {
@@ -408,228 +556,6 @@ export const GridZxMorphCanvas: React.FC<GridZxMorphCanvasProps> = ({
                 </g>
               );
             })}
-
-          {/* STAGE (b): 2D Grid-Aligned ZX (Completed Global Graph from Previous Phase) */}
-          {stage === 'b' && (
-            <g>
-              {/* 1. Horizontal Swimlane Bands for Each Cat State */}
-              {globalLayout.swimlanes.map((lane) => {
-                const isZ = lane.kind === 'Z';
-                const isGreen = (basis === 'Z' && isZ) || (basis === 'X' && !isZ);
-                return (
-                  <g key={`lane-${lane.kind}-${lane.index}-${lane.qubitCol}`}>
-                    <rect
-                      x={14}
-                      y={lane.y}
-                      width={globalLayout.svgWidth - 28}
-                      height={lane.h}
-                      rx={10}
-                      fill={isGreen ? '#f0fdf4' : '#fff1f2'}
-                      fillOpacity={0.55}
-                      stroke={isGreen ? '#bbf7d0' : '#fecdd3'}
-                      strokeWidth={1.1}
-                    />
-                    <text
-                      x={26}
-                      y={lane.y + lane.h / 2 + 4}
-                      textAnchor="start"
-                      fontSize={10.5}
-                      className={`font-mono font-bold ${
-                        isGreen ? 'fill-emerald-800' : 'fill-rose-800'
-                      }`}
-                    >
-                      {lane.label}
-                    </text>
-                  </g>
-                );
-              })}
-
-              {/* 2. Topological Generation Column Guides & Headers */}
-              {Array.from({ length: globalLayout.numGens }, (_, gIdx) => {
-                const gx = globalLayout.firstGenX + gIdx * globalLayout.genStepX;
-                return (
-                  <g key={`gen-col-${gIdx}`}>
-                    <line
-                      x1={gx}
-                      y1={26}
-                      x2={gx}
-                      y2={globalLayout.svgHeight - 8}
-                      stroke="#cbd5e1"
-                      strokeWidth={1}
-                      strokeDasharray="3,4"
-                      strokeOpacity={0.7}
-                    />
-                    <rect
-                      x={gx - 28}
-                      y={5}
-                      width={56}
-                      height={18}
-                      rx={5}
-                      fill="#f8fafc"
-                      stroke="#e2e8f0"
-                      strokeWidth={1}
-                    />
-                    <text
-                      x={gx}
-                      y={17.5}
-                      textAnchor="middle"
-                      fontSize={9.5}
-                      className="font-mono font-semibold fill-slate-600"
-                    >
-                      Gen {gIdx}
-                    </text>
-                  </g>
-                );
-              })}
-
-              {/* 3. Physical Data Qubit Output Wires to Right Boundary */}
-              <text
-                x={globalLayout.rightBoundaryX}
-                y={18}
-                textAnchor="middle"
-                fontSize={9.5}
-                className="fill-slate-500 font-mono font-semibold"
-              >
-                Output Qubits
-              </text>
-              <line
-                x1={globalLayout.rightBoundaryX}
-                y1={26}
-                x2={globalLayout.rightBoundaryX}
-                y2={globalLayout.svgHeight - 8}
-                stroke="#94a3b8"
-                strokeWidth={1}
-                strokeDasharray="2,3"
-              />
-
-              {Array.from(globalLayout.posMap.entries()).map(([gId, pos]) => {
-                if (!pos.isPrimaryExit) return null;
-                return (
-                  <g key={`exit-${gId}`}>
-                    <line
-                      x1={pos.x}
-                      y1={pos.y}
-                      x2={globalLayout.rightBoundaryX}
-                      y2={pos.y}
-                      stroke="#334155"
-                      strokeWidth={1.9}
-                      strokeOpacity={0.85}
-                    />
-                    <circle
-                      cx={globalLayout.rightBoundaryX}
-                      cy={pos.y}
-                      r={3.2}
-                      fill="#0f172a"
-                    />
-                    <text
-                      x={globalLayout.rightBoundaryX + 8}
-                      y={pos.y + 3.5}
-                      textAnchor="start"
-                      fontSize={10.5}
-                      className="font-mono font-bold fill-slate-800"
-                    >
-                      q_{pos.dataQubitCol}
-                    </text>
-                  </g>
-                );
-              })}
-
-              {/* 4. Internal Edges of baseGlobalG (Bold for Spanning Forest F, Dashed for cycle closures) */}
-              {internalEdges.map((e, idx) => {
-                const p1 = globalLayout.posMap.get(e.source);
-                const p2 = globalLayout.posMap.get(e.target);
-                if (!p1 || !p2) return null;
-                const inForest = hasUndirectedEdge(globalF, e.source, e.target);
-                const dPath = buildUndirectedEdgePath(p1.x, p1.y, p2.x, p2.y);
-                if (!dPath) return null;
-
-                return (
-                  <path
-                    key={`int-${idx}`}
-                    d={dPath}
-                    fill="none"
-                    stroke={inForest ? '#0f172a' : '#64748b'}
-                    strokeWidth={inForest ? 3.2 : 1.9}
-                    strokeDasharray={inForest ? undefined : '4,3'}
-                  />
-                );
-              })}
-
-              {/* 5. External CNOT Edges Added by Algorithm 1 */}
-              {pipeline.stepSnapshots.map((snap) => {
-                const pZ = globalLayout.posMap.get(snap.zGlobalNode);
-                const pX = globalLayout.posMap.get(snap.xGlobalNode);
-                if (!pZ || !pX) return null;
-                const dPath = buildUndirectedEdgePath(pZ.x, pZ.y, pX.x, pX.y);
-                if (!dPath) return null;
-
-                return (
-                  <path
-                    key={`cnot-${snap.stepIndex}`}
-                    d={dPath}
-                    fill="none"
-                    stroke="#0369a1"
-                    strokeWidth={2.4}
-                    strokeOpacity={0.85}
-                  />
-                );
-              })}
-
-              {/* 6. Spider Nodes & Root Highlights */}
-              {Array.from(globalLayout.posMap.entries()).map(([gId, pos]) => {
-                const isZ = pos.compKind === 'Z';
-                const fill = isZ ? rowFill : colFill;
-                const stroke = isZ ? rowStroke : colStroke;
-
-                return (
-                  <g key={`node-${gId}`}>
-                    {/* Root node blue square highlight */}
-                    {pos.isRoot && (
-                      <g>
-                        <rect
-                          x={pos.x - 14.5}
-                          y={pos.y - 14.5}
-                          width={29}
-                          height={29}
-                          rx={5}
-                          fill="none"
-                          stroke="#2563eb"
-                          strokeWidth={2.2}
-                        />
-                        <text
-                          x={pos.x}
-                          y={pos.y + 24}
-                          textAnchor="middle"
-                          fontSize={9}
-                          className="font-mono font-bold fill-blue-700"
-                        >
-                          r_{pos.rootTreeCol}
-                        </text>
-                      </g>
-                    )}
-
-                    <circle
-                      cx={pos.x}
-                      cy={pos.y}
-                      r={NODE_RADIUS}
-                      fill={fill}
-                      stroke={stroke}
-                      strokeWidth={2}
-                    />
-                    <text
-                      x={pos.x}
-                      y={pos.y + 3.5}
-                      textAnchor="middle"
-                      fontSize={9.5}
-                      className="font-mono font-bold fill-slate-900"
-                    >
-                      {gId}
-                    </text>
-                  </g>
-                );
-              })}
-            </g>
-          )}
 
           {/* STAGE (c): Identity-Padded & Unfused ZX on the 2D Grid */}
           {stage === 'c' && (
@@ -866,6 +792,18 @@ export const GridZxMorphCanvas: React.FC<GridZxMorphCanvasProps> = ({
         {stage === 'b' ? (
           <>
             <span className="inline-flex items-center gap-1.5">
+              <span className="w-3 h-3 rounded-full bg-emerald-300 border border-emerald-700 inline-block"></span>
+              Z-Spider
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <span className="w-3 h-3 rounded-full bg-rose-300 border border-rose-700 inline-block"></span>
+              X-Spider
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <span className="w-3 h-3 rounded-xs border-2 border-blue-600 inline-block"></span>
+              Root r_k
+            </span>
+            <span className="inline-flex items-center gap-1.5">
               <span className="w-3.5 h-1 bg-slate-900 inline-block"></span>
               Spanning Forest F
             </span>
@@ -874,16 +812,12 @@ export const GridZxMorphCanvas: React.FC<GridZxMorphCanvasProps> = ({
               Non-Tree Closure
             </span>
             <span className="inline-flex items-center gap-1.5">
-              <span className="w-3 h-3 rounded-xs border-2 border-blue-600 inline-block"></span>
-              Root r_k
-            </span>
-            <span className="inline-flex items-center gap-1.5">
               <span className="w-3.5 h-0.5 bg-sky-700 inline-block"></span>
-              External CNOTs
+              External CNOT Edge
             </span>
             <span className="inline-flex items-center gap-1.5">
-              <span className="w-3.5 h-0.5 border-t-2 border-dashed border-slate-400 inline-block"></span>
-              Output Boundary (q_0..q_{N - 1})
+              <span className="w-3.5 h-0.5 bg-slate-900 inline-block"></span>
+              Data Qubit Wire (q_0..q_{N - 1})
             </span>
           </>
         ) : stage === 'c' ? (
