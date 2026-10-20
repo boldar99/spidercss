@@ -1,6 +1,6 @@
 import React from 'react';
 import { TrendingDown, Calculator, ShieldCheck } from 'lucide-react';
-import type { CostBreakdown } from '../../engine/types';
+import type { BasisType, CostBreakdown } from '../../engine/types';
 import { minimumNumberOfFlags } from '../../engine/optimizeParityMatrix';
 import { Math as KaTeXMath } from '../common/Math';
 
@@ -9,6 +9,7 @@ interface CostBreakdownCardProps {
   initialCost: CostBreakdown;
   t: number;
   isPerfect?: boolean;
+  basis?: BasisType;
 }
 
 export const CostBreakdownCard: React.FC<CostBreakdownCardProps> = ({
@@ -16,6 +17,7 @@ export const CostBreakdownCard: React.FC<CostBreakdownCardProps> = ({
   initialCost,
   t,
   isPerfect = false,
+  basis = 'Z',
 }) => {
   const cnotDiff = currentCost.totalCnots - initialCost.totalCnots;
   const flagDiff = currentCost.totalFlags - initialCost.totalFlags;
@@ -145,7 +147,7 @@ export const CostBreakdownCard: React.FC<CostBreakdownCardProps> = ({
             <ShieldCheck className="w-3.5 h-3.5 text-blue-600 shrink-0" />
             <span>
               <strong>Perfect QECC (<code className="font-mono">is_perfect</code>):</strong>{' '}
-              Col spiders unfuse at <KaTeXMath tex={`t-1=${xT}`} /> instead of{' '}
+              Col ({basis === 'X' ? 'Z' : 'X'}) spiders unfuse at <KaTeXMath tex={`t-1=${xT}`} /> instead of{' '}
               <KaTeXMath tex={`t=${t}`} />
             </span>
           </span>

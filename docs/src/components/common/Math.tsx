@@ -34,11 +34,12 @@ export const Math: React.FC<MathProps> = ({
 
 /**
  * Produces balanced, beautiful KaTeX for |\overline{0}\rangle and |\overline{+}\rangle
- * so that the overline bar has identical height, width, and breathing room inside |...⟩,
+ * so that both states have identical height, depth, overline position, and breathing room inside |...⟩,
  * without colliding with | or \rangle and without shrinking the + sign.
  */
 export function logicalStateTex(basis: 'Z' | 'X', k = 1): string {
-  const inner = basis === 'Z' ? '\\overline{0}' : '\\overline{\\vphantom{0}+}';
+  const inner =
+    basis === 'Z' ? '\\overline{\\vphantom{+}0}' : '\\overline{\\vphantom{0}+}';
   const ket = `|\\mkern2mu${inner}\\mkern2mu\\rangle`;
   return k > 1 ? `${ket}^{\\otimes ${k}}` : ket;
 }
@@ -53,5 +54,10 @@ export const LogicalKet: React.FC<LogicalKetProps> = ({
   basis,
   k = 1,
   className = '',
-}) => <Math tex={logicalStateTex(basis, k)} className={className} />;
+}) => (
+  <Math
+    tex={logicalStateTex(basis, k)}
+    className={`inline-flex items-center leading-none ${className}`}
+  />
+);
 

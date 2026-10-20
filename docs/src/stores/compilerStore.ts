@@ -79,7 +79,7 @@ function buildPhase2StateForCode(
   bestMatrix: BinaryMatrix;
   costHistory: number[];
 } {
-  const validation = validateCSSCode(H_x, H_z, d);
+  const validation = validateCSSCode(H_x, H_z, d, basis);
   const { activeM } = getActiveMatricesForBasis(H_x, H_z, basis);
   const cols = activeM[0]?.length ?? 0;
   const identityPerm = Array.from({ length: cols }, (_, i) => i);

@@ -69,7 +69,7 @@ def prepare_css_state(
     method: str | None = None,
     max_basis_tries: int = 10_000,
     analyze_hook_errors: bool = True,
-    is_perfect_code: bool = False,
+    is_perfect_code: bool | None = None,
     reuse_target: ReuseTarget | str = ReuseTarget.QUBITS,
     routing_heuristic: str = "critical_path_first",
     preparation_basis: str = "Z",
@@ -93,6 +93,7 @@ def prepare_css_state(
         max_basis_tries: Number of row bases considered for each preparation.
         analyze_hook_errors: Whether to use safe stabilizer splits when available.
         is_perfect_code: Enables the existing perfect-code cat-state optimization.
+            If None, auto-detected from the active parity matrix and distance.
         reuse_target: Optimize for ``"qubits"``, ``"depth"``, or ``"balanced"``.
         preparation_basis: ``"Z"`` synthesizes from the encoded X stabilizers;
             ``"X"`` synthesizes from the encoded Z stabilizers. Used only by
@@ -162,7 +163,7 @@ def prepare_css_state_transversally(
     method: str | None = None,
     max_basis_tries: int = 10_000,
     analyze_hook_errors: bool = True,
-    is_perfect_code: bool = False,
+    is_perfect_code: bool | None = None,
     reuse_target: ReuseTarget | str = ReuseTarget.QUBITS,
     routing_heuristic: str = "critical_path_first",
 ) -> stim.Circuit:

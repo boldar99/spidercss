@@ -188,7 +188,7 @@ export const ZxRewritesView: React.FC = () => {
           : wellOrderedFtCatStateData(deg, xT, true);
       const colBasis = basis === 'Z' ? 'X' : 'Z';
       return {
-        label: `${colBasis}_${npIdx} (Non-Pivot Col q_${nonPivots[npIdx]}, t_X=${xT}${
+        label: `${colBasis}_${npIdx} (Non-Pivot Col q_${nonPivots[npIdx]}, t_${colBasis}=${xT}${
           validation.isPerfect ? ' [Perfect QECC t−1]' : ''
         })`,
         spiderBasis: colBasis,

@@ -117,6 +117,36 @@ class PrepareCssStateTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, r"\[\[n, 1, d\]\]"):
             prepare_css_state(stim.Circuit("R 0"), "test_code")
 
+    def test_perfect_code_unfuses_z_spiders_at_t_minus_one_in_x_basis(self):
+        from spidercss.cat_at_origin import cat_at_origin
+        from spidercss.utils import load_qecc
+
+        _, _, H_z, _, _, d = load_qecc("7_1_3")
+        # With perfect code optimization in X basis: non-pivot Z-spiders unfuse at t - 1 = 0 (no flags on Z spiders)
+        circ_perfect = cat_at_origin(H_z, d, basis="X", is_perfect_code=True)
+        # Without perfect code optimization: non-pivot Z-spiders unfuse at t = 1 (flags present on Z spiders)
+        circ_imperfect = cat_at_origin(H_z, d, basis="X", is_perfect_code=False)
+
+        self.assertEqual(circ_perfect.num_qubits, 10)
+        self.assertEqual(circ_imperfect.num_qubits, 11)
+
+    @patch("spidercss.css_state.row_optimized_cat_at_origin")
+    @patch("spidercss.css_state.load_qecc")
+    def test_prepare_css_state_passes_is_perfect_code(
+        self, load_qecc, prepare_joint_state
+    ):
+        h = np.array([[1, 1, 0]], dtype=np.int8)
+        logical = np.array([[0, 0, 1]], dtype=np.int8)
+        load_qecc.return_value = True, h, h, logical, logical, 3
+        prepare_joint_state.return_value = stim.Circuit("R 0")
+
+        prepare_css_state(
+            stim.Circuit("RX 0"), "test_code", preparation_basis="X", is_perfect_code=True
+        )
+
+        self.assertEqual(prepare_joint_state.call_args.kwargs["basis"], "X")
+        self.assertIs(prepare_joint_state.call_args.kwargs["is_perfect_code"], True)
+
 
 if __name__ == "__main__":
     unittest.main()

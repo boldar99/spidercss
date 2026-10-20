@@ -7,7 +7,7 @@ from spidercss.circuit_extraction import CatStateExtractor, StimBuilder
 from spidercss.draw import draw_forest_on_graph, display_digraph
 from spidercss.hook_errors import characterize_stabilizer_splits, get_exact_partial_splits
 from spidercss.spider_leg_matcher import match_edges
-from spidercss.utils import find_pivots_in_matrix, load_qecc, count_operations, get_conj_M, is_perfect_code
+from spidercss.utils import find_pivots_in_matrix, load_qecc, count_operations, get_conj_M, is_perfect_code as check_is_perfect_code
 from spidercss.well_ordered_cat_state import well_ordered_ft_cat_state_data, well_ordered_composite_cat_state_data
 from spidercss.optimize_parity_matrix import has_unique_ones_property, row_optimize_matrix
 from spidercss.joint_extraction_planner import plan_joint_extraction, materialize_matching
@@ -18,19 +18,22 @@ from spidercss.stim_utils import get_cnot_depth
 
 def row_optimized_cat_at_origin(H: np.ndarray, d: int, basis="Z", max_basis_tries: int = 10_000,
                                 analyze_hook_errors=False, reuse_target: ReuseTarget | str = ReuseTarget.NONE,
-                                routing_heuristic: str | None = None):
+                                routing_heuristic: str | None = None,
+                                is_perfect_code: bool | None = None):
     t = (d - 1) // 2
     _, matrix_after_row_ops = row_optimize_matrix(H, t, max_basis_tries)
     return cat_at_origin(
         matrix_after_row_ops, d, basis=basis, analyze_hook_errors=analyze_hook_errors,
-        reuse_target=reuse_target, routing_heuristic=routing_heuristic
+        reuse_target=reuse_target, routing_heuristic=routing_heuristic,
+        is_perfect_code=is_perfect_code,
     )
 
 
 def cat_at_origin(H: np.ndarray, d: int, draw_solutions=False, basis="Z", *,
                   analyze_hook_errors=False, _hook_results=None,
                   reuse_target: ReuseTarget | str = ReuseTarget.NONE,
-                  routing_heuristic: str | None = None) -> stim.Circuit:
+                  routing_heuristic: str | None = None,
+                  is_perfect_code: bool | None = None) -> stim.Circuit:
     if not has_unique_ones_property(H):
         raise ValueError(f"H is not representing a bipartite graph state.")
 
@@ -41,7 +44,7 @@ def cat_at_origin(H: np.ndarray, d: int, draw_solutions=False, basis="Z", *,
     pivots_perm = [row for row, col in sorted(pivots.items(), key=lambda item: item[1])]
     non_pivots = [p for p in range(N) if p not in pivots.values()]
     assert len(rows_without_pivots) == 0
-    _is_perfect_code = is_perfect_code(H, d)
+    _is_perfect_code = check_is_perfect_code(H, d) if is_perfect_code is None else is_perfect_code
     if _is_perfect_code:
         analyze_hook_errors = False
 
@@ -82,10 +85,14 @@ def cat_at_origin(H: np.ndarray, d: int, draw_solutions=False, basis="Z", *,
     x_spiders = [list(map(len, p)) for p in x_splits]
     z_spiders = np.sum(H, axis=1)
 
-    x_t = t - 1 if _is_perfect_code else t
+    # When basis == "Z" (|0> prep), row spiders are Z and non-pivot col spiders are X; non-pivot X-spiders unfuse at t-1.
+    # When basis == "X" (|+> prep), row spiders are X and non-pivot col spiders are Z; non-pivot Z-spiders unfuse at t-1.
+    col_t = t - 1 if _is_perfect_code else t
+    row_t = t
+    x_t = col_t
 
-    z_data = [well_ordered_ft_cat_state_data(zs, t) for zs in z_spiders]
-    x_data = [well_ordered_composite_cat_state_data(xs, x_t) for xs in x_spiders]
+    z_data = [well_ordered_ft_cat_state_data(zs, row_t) for zs in z_spiders]
+    x_data = [well_ordered_composite_cat_state_data(xs, col_t) for xs in x_spiders]
     z_graphs, x_graphs, z_trees, x_trees, z_mains, x_mains = [], [], [], [], [], []
     z_digraphs, x_digraphs = [], []
     z_candidates, x_candidates = [], []

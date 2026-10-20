@@ -46,6 +46,9 @@ describe('SpiderCSS TypeScript Engine Parity Suite', () => {
     expect(vSteane.d).toBe(3);
     expect(vSteane.isPerfect).toBe(true);
 
+    const vSteaneX = validateCSSCode(steane.H_x, steane.H_z, steane.d, 'X');
+    expect(vSteaneX.isPerfect).toBe(true);
+
     expect(isPerfectCode(golay.H_x, golay.d)).toBe(true);
     expect(isPerfectCode(surface9.H_x, surface9.d)).toBe(false);
 
@@ -167,6 +170,23 @@ describe('SpiderCSS TypeScript Engine Parity Suite', () => {
     expect(steaneQubits.numCx).toBe(15);
     expect(steaneQubits.numFlagMeasurements).toBe(3);
     expect(steaneQubits.numQubits).toBe(8);
+
+    // 1b. Steane [[7, 1, 3]] in X-basis: Non-pivot Z-spiders unfuse at t-1 = 0
+    const steanePipelineX = buildGlobalPipelineAndSnapshots({
+      H: steane.H_z,
+      d: steane.d,
+      basis: 'X',
+      analyzeHookErrors: false,
+      routingHeuristic: 'critical_path_first',
+    });
+    expect(steanePipelineX.stepSnapshots.length).toBe(9);
+    expect(isDirectedAcyclicGraph(steanePipelineX.finalD)).toBe(true);
+    const steaneNoneX = compileFromGlobalPipeline(steanePipelineX, 'None');
+    expect(steaneNoneX.numCx).toBe(15);
+    expect(steaneNoneX.numFlagMeasurements).toBe(3);
+    expect(steaneNoneX.numQubits).toBe(10);
+    const steaneQubitsX = compileFromGlobalPipeline(steanePipelineX, 'qubits');
+    expect(steaneQubitsX.numQubits).toBe(8);
 
     // 2. Surface [[9, 1, 3]]: 12 CNOTs, 2 flags, 11 qubits (no reuse), 9 qubits (qubit reuse)
     const surf9 = getFaoPreset('9_1_3');

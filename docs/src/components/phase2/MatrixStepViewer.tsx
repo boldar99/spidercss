@@ -316,11 +316,11 @@ export const MatrixStepViewer: React.FC<MatrixStepViewerProps> = ({
               const isAnyRowHighlighted = highlightedRow !== null;
               const isDimmedRow = isAnyRowHighlighted && !isRowHighlighted;
 
-              let trClass = 'transition-all duration-150 ';
+              let trClass = 'transition-colors duration-100 ';
               if (isRowHighlighted) {
                 trClass += isChosenZ
-                  ? 'bg-emerald-100/80 font-semibold '
-                  : 'bg-rose-100/80 font-semibold ';
+                  ? 'bg-emerald-100/80 '
+                  : 'bg-rose-100/80 ';
               } else if (hasPivot) {
                 trClass += isChosenZ
                   ? 'bg-emerald-50/35 hover:bg-emerald-50/70 '
@@ -338,23 +338,23 @@ export const MatrixStepViewer: React.FC<MatrixStepViewerProps> = ({
                   className={trClass}
                 >
                   <td
-                    className="py-1 pr-2 text-[11px] whitespace-nowrap cursor-pointer select-none"
+                    className="py-1 pr-2 text-[11px] whitespace-nowrap cursor-pointer select-none transition-colors duration-100"
                     onMouseEnter={() => onHoverRow?.(rIdx)}
                     onMouseLeave={() => onHoverRow?.(null)}
                     title={`Hover row label to highlight ${basis === 'Z' ? 'Z' : 'X'}_${rIdx} spider in diagram`}
                   >
                     <div className="flex items-center gap-1">
                       <span
-                        className={`px-1.5 py-0.5 rounded text-[11px] font-bold transition-all ${
+                        className={`px-1.5 py-0.5 rounded text-[11px] font-bold border transition-colors duration-100 ${
                           isRowHighlighted
                             ? isChosenZ
-                              ? 'bg-emerald-600 text-white shadow-xs'
-                              : 'bg-rose-600 text-white shadow-xs'
+                              ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs'
+                              : 'bg-rose-600 text-white border-rose-600 shadow-xs'
                             : hasPivot
                             ? isChosenZ
-                              ? 'text-emerald-900 bg-emerald-100/80 border border-emerald-300'
-                              : 'text-rose-900 bg-rose-100/80 border border-rose-300'
-                            : 'text-slate-600 bg-slate-100'
+                              ? 'text-emerald-900 bg-emerald-100/80 border-emerald-300'
+                              : 'text-rose-900 bg-rose-100/80 border-rose-300'
+                            : 'text-slate-600 bg-slate-100 border-slate-200'
                         }`}
                       >
                         {basis === 'Z' ? 'Z' : 'X'}
@@ -401,27 +401,19 @@ export const MatrixStepViewer: React.FC<MatrixStepViewerProps> = ({
                     return (
                       <td
                         key={cIdx}
-                        className={`p-0.5 text-center transition-all duration-150 ${tdBg} ${
+                        className={`p-0.5 text-center transition-colors duration-100 ${tdBg} ${
                           isDimmedCell ? 'opacity-40' : ''
                         }`}
                       >
                         <span
-                          className={`inline-flex items-center justify-center w-6 h-6 rounded text-xs font-semibold transition-all ${
+                          className={`inline-flex items-center justify-center w-6 h-6 rounded text-xs font-semibold transition-colors duration-100 ${
                             isUniquePivotOne
                               ? isChosenZ
-                                ? `bg-emerald-600 text-white shadow-2xs ring-2 ring-emerald-300 font-bold ${
-                                    isCellInHighlightedRow || isColHighlighted
-                                      ? 'scale-110 ring-emerald-400 shadow-sm'
-                                      : ''
-                                  }`
-                                : `bg-rose-600 text-white shadow-2xs ring-2 ring-rose-300 font-bold ${
-                                    isCellInHighlightedRow || isColHighlighted
-                                      ? 'scale-110 ring-rose-400 shadow-sm'
-                                      : ''
-                                  }`
+                                ? 'bg-emerald-600 text-white shadow-2xs font-bold border border-emerald-600'
+                                : 'bg-rose-600 text-white shadow-2xs font-bold border border-rose-600'
                               : bit === 1
                               ? isCellInHighlightedRow || isColHighlighted
-                                ? 'bg-purple-200 text-purple-950 ring-2 ring-purple-400 font-black shadow-xs scale-105'
+                                ? 'bg-purple-200 text-purple-950 font-bold border border-purple-400 shadow-xs'
                                 : 'bg-purple-100 text-purple-900 border border-purple-300 font-bold'
                               : 'text-slate-300'
                           }`}

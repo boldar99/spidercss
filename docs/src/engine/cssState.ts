@@ -32,7 +32,8 @@ export function isPerfectCode(H: BinaryMatrix, d: number): boolean {
 export function validateCSSCode(
   H_x: BinaryMatrix,
   H_z: BinaryMatrix,
-  d = 3
+  d = 3,
+  basis: BasisType = 'Z'
 ): CSSValidationResult {
   const errors: string[] = [];
   const anticommutingPairs: Array<[number, number]> = [];
@@ -94,7 +95,8 @@ export function validateCSSCode(
   const rankHz = errors.length === 0 ? rankGF2(H_z) : 0;
   const k = Math.max(0, n - rankHx - rankHz);
   const t = Math.max(0, Math.floor(d / 2));
-  const isPerfect = errors.length === 0 && isPerfectCode(H_x, d);
+  const activeMatrix = basis === 'X' ? H_z : H_x;
+  const isPerfect = errors.length === 0 && isPerfectCode(activeMatrix, d);
 
   return {
     valid: errors.length === 0,

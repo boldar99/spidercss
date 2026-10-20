@@ -370,6 +370,7 @@ export const Phase2RrefOptim: React.FC = () => {
             initialCost={initialCost}
             t={validation.t}
             isPerfect={validation.isPerfect}
+            basis={basis}
           />
         </div>
 
