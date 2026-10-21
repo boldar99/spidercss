@@ -48,8 +48,18 @@ function syncQeccs() {
     const catOutDir = path.join(qeccOutRoot, category);
     ensureDir(catOutDir);
 
-    const files = fs.readdirSync(catSrcDir).filter((f) => f.endsWith('.json'));
-    for (const file of files) {
+    const srcFiles = fs.readdirSync(catSrcDir).filter((f) => f.endsWith('.json'));
+    const srcFilesSet = new Set(srcFiles);
+
+    // Remove any stale output files no longer present in source
+    const outFiles = fs.readdirSync(catOutDir).filter((f) => f.endsWith('.json'));
+    for (const outFile of outFiles) {
+      if (!srcFilesSet.has(outFile)) {
+        fs.unlinkSync(path.join(catOutDir, outFile));
+      }
+    }
+
+    for (const file of srcFiles) {
       const codeId = path.basename(file, '.json');
       const rawContent = fs.readFileSync(path.join(catSrcDir, file), 'utf8');
       const parsed = JSON.parse(rawContent);
@@ -67,7 +77,10 @@ function syncQeccs() {
         id: `${category}/${codeId}`,
         codeId,
         category,
-        full_name: parsed.full_name ?? `[[${parsed.n}, ${parsed.k}, ${parsed.d}]]`,
+        full_name:
+          parsed.full_name && parsed.full_name.trim().length > 0
+            ? parsed.full_name
+            : `[[${parsed.n}, ${parsed.k}, ${parsed.d}]]`,
         abbr_name: parsed.abbr_name ?? '',
         n: parsed.n,
         k: parsed.k,

@@ -1,5 +1,7 @@
 {
   "name": "color_code",
+  "full_name": "Toric Color Code",
+  "abbr_name": "toric color",
   "n": 18,
   "k": 4,
   "d": 4,

@@ -62,19 +62,13 @@ export const Phase1CodeSpec: React.FC = () => {
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-slate-100 pb-4">
         <div>
           <div className="flex items-center gap-2">
-            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-mono font-semibold bg-emerald-100 text-emerald-800 border border-emerald-200">
-              Phase 1
-            </span>
             <h3 className="text-lg font-bold text-slate-900">
               CSS Code &amp; Target Logical State Specification
             </h3>
           </div>
           <p className="text-xs text-slate-600 mt-1">
             Select from {QECC_PRESETS.length} benchmarked CSS codes or define custom{' '}
-            <KaTeXMath tex="H_X, H_Z" /> parity-check matrices / Pauli strings, target basis (
-            <LogicalKet basis="Z" k={validation.k} /> or{' '}
-            <LogicalKet basis="X" k={validation.k} />
-            ), and distance <KaTeXMath tex="d" />.
+            <KaTeXMath tex="H_X, H_Z" /> parity-check matrices / Pauli strings, target basis, and distance <KaTeXMath tex="d" />.
           </p>
         </div>
 
@@ -115,7 +109,7 @@ export const Phase1CodeSpec: React.FC = () => {
                 </span>
                 <span>•</span>
                 <span className="font-semibold text-emerald-800">
-                  t={validation.t} faults
+                  t={validation.t}
                 </span>
               </div>
             </div>

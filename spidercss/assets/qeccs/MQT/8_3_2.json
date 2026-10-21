@@ -1,5 +1,7 @@
 {
   "name": "smallest_interesting_color_code",
+  "full_name": "Smallest Interesting Color Code",
+  "abbr_name": "color code",
   "n": 8,
   "k": 3,
   "d": 2,

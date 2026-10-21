@@ -1,5 +1,7 @@
 {
   "name": "BCH",
+  "full_name": "Quantum BCH Code",
+  "abbr_name": "BCH",
   "n": 63,
   "k": 27,
   "d": 7,

@@ -1,5 +1,7 @@
 {
   "name": "biplane_code",
+  "full_name": "Biplane Code",
+  "abbr_name": "biplane",
   "n": 16,
   "k": 4,
   "d": 4,
