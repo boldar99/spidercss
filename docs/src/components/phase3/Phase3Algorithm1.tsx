@@ -166,12 +166,9 @@ export const Phase3Algorithm1: React.FC<Phase3Algorithm1Props> = ({
   return (
     <div className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6 shadow-2xs space-y-5">
       {/* Phase 3 Header */}
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-slate-100 pb-4">
+      <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-4 border-b border-slate-100 pb-4">
         <div>
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-mono font-semibold bg-emerald-100 text-emerald-800 border border-emerald-200">
-              Phase 3 • Algorithm 1
-            </span>
+          <div className="flex items-center gap-2">
             <h3 className="text-lg font-bold text-slate-900">
               Global Port Matching (<code className="font-mono text-sm">G_global</code>, <code className="font-mono text-sm">D_global</code>) Without Backtracking
             </h3>

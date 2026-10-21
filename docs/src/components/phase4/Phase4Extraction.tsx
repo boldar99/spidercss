@@ -93,12 +93,9 @@ export const Phase4Extraction: React.FC<Phase4ExtractionProps> = ({
   return (
     <div className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6 shadow-2xs space-y-5">
       {/* Phase 4 Header */}
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-slate-100 pb-4">
+      <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-4 border-b border-slate-100 pb-4">
         <div>
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-mono font-semibold bg-emerald-100 text-emerald-800 border border-emerald-200">
-              Phase 4 • Circuit Extraction &amp; Qubit Reuse
-            </span>
+          <div className="flex items-center gap-2">
             <h3 className="text-lg font-bold text-slate-900">
               Topological Grid Alignment &amp; Post-Extraction Qubit Reuse
             </h3>

@@ -59,7 +59,7 @@ export const Phase1CodeSpec: React.FC = () => {
   return (
     <div className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6 shadow-2xs">
       {/* Phase 1 Header */}
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-slate-100 pb-4">
+      <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-4 border-b border-slate-100 pb-4">
         <div>
           <div className="flex items-center gap-2">
             <h3 className="text-lg font-bold text-slate-900">
@@ -72,8 +72,8 @@ export const Phase1CodeSpec: React.FC = () => {
           </p>
         </div>
 
-        {/* Live [[n, k, d]] Validation Badge */}
-        <div className="flex flex-wrap items-center gap-2">
+        {/* Live [[n, k, d]] Validation & Perfect QECC Badges */}
+        <div className="flex flex-col items-start lg:items-end gap-2 shrink-0">
           <div
             className={`inline-flex items-center gap-2 px-3.5 py-2 rounded-xl border text-xs font-mono ${
               validation.valid
