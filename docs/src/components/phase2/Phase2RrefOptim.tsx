@@ -124,7 +124,7 @@ export const Phase2RrefOptim: React.FC = () => {
 
           {/* Monte Carlo Basis Optimizer Card */}
           <div
-            className={`flex flex-col gap-2 rounded-xl p-2.5 border shrink-0 w-full sm:w-auto min-w-[220px] ${
+            className={`flex flex-col gap-2 rounded-xl p-2.5 border shrink-0 w-full sm:w-auto min-w-[350px] ${
               mode === 'gui'
                 ? 'bg-emerald-50/70 border-emerald-300'
                 : 'bg-slate-50 border-slate-200'
