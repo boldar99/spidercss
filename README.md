@@ -108,9 +108,11 @@ spidercss/
 ├── optimize_parity_matrix.py   # Parity check matrix Gaussian elimination & basis optimizer
 ├── hook_errors.py              # Safe stabilizer split analysis & fault-propagation tracking
 ├── stim_utils.py               # Stim circuit utilities, CNOT depth, and gate layer calculation
+├── generate_circuit.py         # Synthesizes and deposits SpiderCSS benchmark circuits (.stim)
 ├── benchmark.py                # Monte Carlo threshold simulations (Stim & Sinter pipelines)
 ├── lut_decoder.py              # Fast lookup-table decoder for distance-3 and distance-5 codes
 ├── visualize.py / draw.py      # Graph, DAG, and circuit diagram visualizers
+├── assets/circuits/            # Deposited .stim circuits for SpiderCSS and Flag at Origin (FAO)
 └── assets/qeccs/               # Library of pre-computed CSS codes (FAO, MQT, and miscellaneous families)
 ```
 

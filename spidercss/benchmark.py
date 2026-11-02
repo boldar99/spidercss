@@ -18,20 +18,33 @@ import numpy as np
 import stim
 import pandas as pd
 from tqdm import tqdm
-import galois
 from concurrent.futures import ProcessPoolExecutor, as_completed
 
-from spidercss.hook_errors import characterize_stabilizer_splits
-from spidercss.optimize_parity_matrix import row_optimize_matrix
-from spidercss.cat_at_origin import cat_at_origin
 from spidercss.resource_scheduling import plan_resource_aware_reuse
 from spidercss.resource_targets import ReuseTarget
-from spidercss.utils import load_qecc, get_conj_M, load_FAO_circ, FAO_simp_QECCS, FAO_hard_QECCS, very_hard_QECCS
+from spidercss.utils import (
+    get_project_root,
+    load_qecc,
+    load_FAO_circ,
+    load_SpiderCSS_circ,
+    list_SpiderCSS_routing_variants,
+    FAO_simp_QECCS,
+    FAO_hard_QECCS,
+    very_hard_QECCS,
+)
 from spidercss.stim_utils import make_stim_circ_noisy, get_cnot_depth
 from spidercss.qubit_reuse import build_circuit_dag, dag_to_circuit
 from spidercss.lut_decoder import LutDecoder
 
 CP_SAT_SEED_MODULUS = 2**31 - 1
+
+BENCHMARK_ROUTING_HEURISTICS = (
+    # "joint_resource",
+    # "critical_path_first",
+    # "earliest_start_first",
+    "active_spider_first",
+    # "sa_sequence_distance",
+)
 
 _ESTIMATE_LER = True
 _G_CIRC_STR = None
@@ -43,9 +56,8 @@ def _simulate_batch(batch_size):
     sampler = stim.Circuit(_G_CIRC_STR).compile_sampler()
     samples = sampler.sample(batch_size)
 
-    _GF = galois.GF(2)
-    g_H_x_T = _GF(_G_H_X.T)
-    g_L_x_T = _GF(_G_L_X.T)
+    h_x_T = _G_H_X.T.astype(np.uint8)
+    l_x_T = _G_L_X.T.astype(np.uint8)
 
     is_flagged = np.any(samples[:, :-_G_H_X.shape[1]], axis=1)
     num_flagged = np.sum(is_flagged)
@@ -53,8 +65,7 @@ def _simulate_batch(batch_size):
     filtered_samples = samples[~is_flagged]
     raw_measurements = filtered_samples[:, -_G_H_X.shape[1]:]
 
-    g_raw = _GF(raw_measurements.astype(np.int8))
-    syndromes = g_raw @ g_H_x_T
+    syndromes = (raw_measurements.astype(np.uint8) @ h_x_T) & 1
 
     if not _ESTIMATE_LER:
         return batch_size, int(num_flagged), 0, None
@@ -67,8 +78,7 @@ def _simulate_batch(batch_size):
     valid_measurements = raw_measurements[valid_mask]
     corrected_measurements = valid_measurements ^ valid_corrections
 
-    g_corrected = _GF(corrected_measurements.astype(np.int8))
-    predicted_logicals = g_corrected @ g_L_x_T
+    predicted_logicals = (corrected_measurements.astype(np.uint8) @ l_x_T) & 1
 
     incorrect_predictions = np.any(predicted_logicals, axis=1)
     num_incorrect = np.sum(incorrect_predictions)
@@ -108,8 +118,9 @@ def run_simulation(code, method_name, circ_with_reuse, scheduled_circ, H_x, H_z,
     circ_str = str(noisy_circ)
     circ_hash = hashlib.sha256(circ_str.encode()).hexdigest()[:16]
 
-    os.makedirs("simulation_results", exist_ok=True)
-    csv_file = f"simulation_results/{code}_{circ_hash}.csv"
+    results_dir = get_project_root().joinpath("simulation_results")
+    os.makedirs(results_dir, exist_ok=True)
+    csv_file = str(results_dir.joinpath(f"{code}_{circ_hash}.csv"))
 
     total_shots = 0
     total_flagged = 0
@@ -211,14 +222,21 @@ def run_simulation(code, method_name, circ_with_reuse, scheduled_circ, H_x, H_z,
     print(f"CXs = {stats['num_cx']}")
     print()
 
-    json_file = f"simulation_results/{code}_{method_name}_{circ_hash}.json"
+    json_file = str(results_dir.joinpath(f"{code}_{method_name}_{circ_hash}.json"))
     with open(json_file, "w") as f:
         json.dump(stats, f, indent=4)
 
     return stats
 
 
-def benchmark_state_prep(code: str, p: float, num_samples_fn, estimate_ler: bool, heuristic="exact"):
+def benchmark_state_prep(
+    code: str,
+    p: float,
+    num_samples_fn,
+    estimate_ler: bool,
+    heuristic: str = "exact",
+    routing_heuristics=None,
+):
     global _G_DECODER
     seed_val = (int(hashlib.sha256(code.encode()).hexdigest()[:8], 16) % CP_SAT_SEED_MODULUS)
     random.seed(seed_val)
@@ -234,27 +252,18 @@ def benchmark_state_prep(code: str, p: float, num_samples_fn, estimate_ler: bool
         H_x, H_z = H_z, H_x
         L_x, L_z = L_z, L_x
 
-    is_perfect_code = code in ("7_1_3", "23_1_7")
     n_data = H_x.shape[1]
     max_weight = None if bool(d % 2) else (d - 1) // 2
     num_samples = num_samples_fn(d)
 
     _G_DECODER = None
 
-    # Pre-computation for SpiderCSS
-    matrix_rng = np.random.RandomState(seed_val)
-    t = (d - 1) // 2
-    print(f"[{code}] Pre-computing SpiderCSS row optimizations...")
-    _, matrix_after_row_ops = row_optimize_matrix(H_x, t, max_basis_tries=10_000, rng=matrix_rng)
-    print(f"[{code}] Pre-computing SpiderCSS hook error characterization...")
-    hook_results = characterize_stabilizer_splits(get_conj_M(matrix_after_row_ops))
-
     all_stats = []
 
     # ==========================
     # FAO Processing
     # ==========================
-    print(f"[{code}] Generating FAO circuits...")
+    print(f"[{code}] Loading FAO circuits...")
     try:
         fao_circ = load_FAO_circ(code)
 
@@ -276,70 +285,119 @@ def benchmark_state_prep(code: str, p: float, num_samples_fn, estimate_ler: bool
 
         stats_fao = run_simulation(code, "FaO", fao_circ, fao_scheduled, H_x, H_z, L_z, max_weight, p, num_samples, estimate_ler, num_qubits_max_fao, depth_max_fao, num_qubits_min_fao, depth_min_fao)
         all_stats.append(stats_fao)
-    except:
-        print(f"[{code}] Generating FAO circuit failed...")
+    except Exception:
+        print(f"[{code}] Loading FAO circuit failed...")
 
     # ==========================
     # SpiderCSS Processing
     # ==========================
-    BENCHMARK_ROUTING_HEURISTICS = (
-        # "joint_resource",
-        # "critical_path_first",
-        # "earliest_start_first",
-        "active_spider_first",
-        # "sa_sequence_distance",
-    )
-    print(f"[{code}] Generating SpiderCSS Max/Min Reuse circuits...")
-    
-    # 1. Max Reuse (Global optimal over all heuristics)
-    cao_max = cat_at_origin(matrix_after_row_ops, d, basis=basis, analyze_hook_errors=True, _hook_results=hook_results, is_perfect_code=is_perfect_code, reuse_target=ReuseTarget.QUBITS)
+    print(f"[{code}] Loading SpiderCSS Max/Min Reuse circuits...")
+
+    # 1. Max Reuse (loaded from assets/circuits/SpiderCSS/{code}_qubits.stim)
+    cao_max = load_SpiderCSS_circ(code, "qubits")
     num_qubits_max_cao = cao_max.num_qubits
     depth_max_cao = get_cnot_depth(cao_max)
     print(f"[{code} SpiderCSS] Max Reuse -> Qubits: {num_qubits_max_cao}, Depth: {depth_max_cao}")
 
-    # 2. Min Reuse (Global optimal over all heuristics)
-    cao_min = cat_at_origin(matrix_after_row_ops, d, basis=basis, analyze_hook_errors=True, _hook_results=hook_results, is_perfect_code=is_perfect_code, reuse_target=ReuseTarget.DEPTH)
+    # 2. Min Reuse (loaded from assets/circuits/SpiderCSS/{code}_depth.stim)
+    cao_min = load_SpiderCSS_circ(code, "depth")
     num_qubits_min_cao = cao_min.num_qubits
     depth_min_cao = get_cnot_depth(cao_min)
     print(f"[{code} SpiderCSS] Min Reuse -> Qubits: {num_qubits_min_cao}, Depth: {depth_min_cao}")
 
-    # 3. No Reuse (Exact Scheduled) - evaluated per heuristic
-    for routing_heuristic in BENCHMARK_ROUTING_HEURISTICS:
-        print(f"[{code}] Generating SpiderCSS LER simulation circuit for {routing_heuristic}...")
-        cao_none = cat_at_origin(matrix_after_row_ops, d, basis=basis, analyze_hook_errors=True, _hook_results=hook_results, is_perfect_code=is_perfect_code, reuse_target=ReuseTarget.NONE, routing_heuristic=routing_heuristic)
-        cao_dag = build_circuit_dag(cao_none)
-        cao_scheduled, _ = dag_to_circuit(cao_dag, heuristic=heuristic, random_seed=seed_val)
+    # 3. No Reuse (Scheduled) - loaded from assets/circuits/SpiderCSS/{code}_{routing_heuristic}.stim
+    available_heuristics = list_SpiderCSS_routing_variants(code)
+    if routing_heuristics == "all":
+        heuristics_to_run = available_heuristics
+    elif routing_heuristics is not None:
+        heuristics_to_run = [h for h in routing_heuristics if h in available_heuristics]
+    else:
+        heuristics_to_run = [h for h in BENCHMARK_ROUTING_HEURISTICS if h in available_heuristics] or available_heuristics
 
-        stats_cao = run_simulation(code, f"SpiderCSS ({routing_heuristic})", cao_none, cao_scheduled, H_x, H_z, L_z, max_weight, p, num_samples, estimate_ler, num_qubits_max_cao, depth_max_cao, num_qubits_min_cao, depth_min_cao)
+    for routing_heuristic in heuristics_to_run:
+        print(f"[{code}] Loading SpiderCSS LER simulation circuit for {routing_heuristic}...")
+        cao_scheduled = load_SpiderCSS_circ(code, routing_heuristic)
+        stats_cao = run_simulation(
+            code,
+            f"SpiderCSS ({routing_heuristic})",
+            cao_scheduled,
+            cao_scheduled,
+            H_x,
+            H_z,
+            L_z,
+            max_weight,
+            p,
+            num_samples,
+            estimate_ler,
+            num_qubits_max_cao,
+            depth_max_cao,
+            num_qubits_min_cao,
+            depth_min_cao,
+        )
         all_stats.append(stats_cao)
 
     return all_stats
 
 
-def benchmark(code_iterator, p, num_samples, estimate_ler=True, heuristic="exact"):
+def benchmark(code_iterator, p, num_samples, estimate_ler=True, heuristic="exact", routing_heuristics=None):
     for code in code_iterator:
         print(f"--- Benchmarking {code} ---")
-        benchmark_state_prep(code, p, num_samples_fn=num_samples, estimate_ler=estimate_ler, heuristic=heuristic)
+        benchmark_state_prep(
+            code,
+            p,
+            num_samples_fn=num_samples,
+            estimate_ler=estimate_ler,
+            heuristic=heuristic,
+            routing_heuristics=routing_heuristics,
+        )
 
 
-def benchmark_triorthogonal_codes():
-    return benchmark(["49_1_5", "95_1_7"], 0.001, num_samples=lambda d: 100_000_000, estimate_ler=True)
+def benchmark_triorthogonal_codes(routing_heuristics=None):
+    return benchmark(["49_1_5", "95_1_7"], 0.001, num_samples=lambda d: 250_000_000, estimate_ler=True, routing_heuristics=routing_heuristics)
 
 
-def benchmark_simple_codes():
-    return benchmark(FAO_simp_QECCS(), 0.001, num_samples=lambda d: 100_000_000 if d < 6 else 250_000_000, estimate_ler=True)
+def benchmark_simple_codes(routing_heuristics=None):
+    return benchmark(FAO_simp_QECCS(), 0.001, num_samples=lambda d: 250_000_000 if d < 5 else 500_000_000, estimate_ler=True, routing_heuristics=routing_heuristics)
 
 
-def benchmark_hard_codes():
-    return benchmark(FAO_hard_QECCS(), 0.001, num_samples=lambda d: 10_000_000, estimate_ler=False)
+def benchmark_hard_codes(routing_heuristics=None):
+    return benchmark(FAO_hard_QECCS(), 0.001, num_samples=lambda d: 10_000_000, estimate_ler=False, routing_heuristics=routing_heuristics)
 
 
-def benchmark_very_hard_codes():
-    return benchmark(very_hard_QECCS(), 0.0001, num_samples=lambda d: 1_000_000, estimate_ler=False, heuristic="greedy")
+def benchmark_very_hard_codes(routing_heuristics=None):
+    return benchmark(very_hard_QECCS(), 0.0001, num_samples=lambda d: 1_000_000, estimate_ler=False, heuristic="greedy", routing_heuristics=routing_heuristics)
 
 
 if __name__ == "__main__":
-    # benchmark_triorthogonal_codes()
-    benchmark_simple_codes()
-    benchmark_hard_codes()
-    benchmark_very_hard_codes()
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Benchmark deposited FAO and SpiderCSS state preparation circuits.")
+    parser.add_argument("--codes", nargs="+", default=None, help="Specific QECC code names to benchmark.")
+    parser.add_argument("--heuristics", nargs="+", default=None, help="Specific SpiderCSS routing heuristics to benchmark.")
+    parser.add_argument("--all-heuristics", action="store_true", help="Benchmark all deposited SpiderCSS routing heuristics for each code.")
+    parser.add_argument("--p", type=float, default=None, help="Physical error rate override.")
+    parser.add_argument("--samples", type=int, default=None, help="Number of Monte Carlo samples override.")
+    args = parser.parse_args()
+
+    rh = "all" if args.all_heuristics else args.heuristics
+    if args.codes:
+        hard_set = set(FAO_hard_QECCS())
+        very_hard_set = set(very_hard_QECCS())
+        for code in args.codes:
+            if code in very_hard_set:
+                p_val = args.p if args.p is not None else 0.0001
+                samples_fn = (lambda d, s=args.samples: s) if args.samples is not None else (lambda d: 1_000_000)
+                benchmark([code], p_val, num_samples=samples_fn, estimate_ler=False, heuristic="greedy", routing_heuristics=rh)
+            elif code in hard_set:
+                p_val = args.p if args.p is not None else 0.001
+                samples_fn = (lambda d, s=args.samples: s) if args.samples is not None else (lambda d: 10_000_000)
+                benchmark([code], p_val, num_samples=samples_fn, estimate_ler=False, routing_heuristics=rh)
+            else:
+                p_val = args.p if args.p is not None else 0.001
+                samples_fn = (lambda d, s=args.samples: s) if args.samples is not None else (lambda d: 250_000_000 if d < 5 else 500_000_000)
+                benchmark([code], p_val, num_samples=samples_fn, estimate_ler=True, routing_heuristics=rh)
+    else:
+        # benchmark_triorthogonal_codes(routing_heuristics=rh)
+        benchmark_simple_codes(routing_heuristics=rh)
+        # benchmark_hard_codes(routing_heuristics=rh)
+        # benchmark_very_hard_codes(routing_heuristics=rh)

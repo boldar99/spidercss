@@ -326,6 +326,29 @@ def load_FAO_circ(code: str) -> stim.Circuit:
     return permute_qubits(filtered_circ, qubit_perm)
 
 
+def load_SpiderCSS_circ(code: str, variant: str = "active_spider_first") -> stim.Circuit:
+    root = get_project_root()
+    filename = f"{code}_{variant}.stim" if variant else f"{code}.stim"
+    file = root.joinpath("assets", "circuits", "SpiderCSS", filename)
+    return stim.Circuit.from_file(file)
+
+
+def list_SpiderCSS_routing_variants(code: str) -> list[str]:
+    root = get_project_root()
+    circ_dir = root.joinpath("assets", "circuits", "SpiderCSS")
+    if not circ_dir.is_dir():
+        return []
+    prefix = f"{code}_"
+    suffix = ".stim"
+    variants = []
+    for fname in sorted(os.listdir(circ_dir)):
+        if fname.startswith(prefix) and fname.endswith(suffix):
+            variant = fname[len(prefix):-len(suffix)]
+            if variant and variant not in ("qubits", "depth"):
+                variants.append(variant)
+    return variants
+
+
 def load_qecc(code: str, method: str | None = None):
     data = load_qecc_data(code, method)
 

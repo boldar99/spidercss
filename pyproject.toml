@@ -36,7 +36,7 @@ where = ["."]
 include = ["spidercss", "spidercss.*"]
 
 [tool.setuptools.package-data]
-"spidercss" = ["**/*.json"]
+"spidercss" = ["**/*.json", "**/*.stim"]
 
 [project.urls]
 Homepage = "https://github.com/boldar99/spidercss"
