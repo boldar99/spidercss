@@ -9,23 +9,24 @@ description = "A package for Spider CSS quantum error correction codes."
 readme = "README.md"
 requires-python = ">=3.9"
 dependencies = [
-    "pyzx",
-    "scipy",
-    "matplotlib",
-    "networkx",
-    "ortools",
-    "pytket",
-    "python-sat",
-    "joblib",
-    "seaborn",
-    "pandas",
-    "qiskit",
-    "galois",
-    "tesseract-decoder",
-    "stim~=1.16.dev",
-    "sinter~=1.16.dev",
-    "numpy",
-    "spidercat @ git+https://github.com/boldar99/spidercat.git"
+    "galois==0.4.11",
+    "joblib==1.6.0",
+    "matplotlib==3.11.2",
+    "networkx==3.6.1",
+    "numpy==2.2.6",
+    "ortools==9.15.6755",
+    "pandas==3.1.0",
+    "python-sat==1.9.dev17",
+    "pytket==2.18.5",
+    "pyzx==0.10.7",
+    "qiskit==2.6.0",
+    "scipy==1.17.1",
+    "seaborn==0.13.2",
+    "sinter>=1.14.0",
+    "stim>=1.14.0",
+    "tesseract-decoder==0.1.1.dev20260822020007",
+    "tqdm==4.70.1",
+    "spidercat @ git+https://github.com/boldar99/spidercat.git@v0.1.0"
 ]
 
 [tool.setuptools]
