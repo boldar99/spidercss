@@ -30,20 +30,63 @@ const {
   <body class="min-h-screen flex flex-col">
     <header class="sticky top-0 z-40 border-b border-slate-200/80 bg-white/90 backdrop-blur-md">
       <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 h-14 flex items-center justify-between">
-        <a href="#" class="flex items-center gap-2.5 group">
-          <span class="inline-flex items-center justify-center w-7 h-7 rounded-full bg-emerald-100 border-2 border-emerald-700 text-emerald-900 font-mono text-xs font-bold shadow-2xs group-hover:scale-105 transition-transform">
-            Z
-          </span>
-          <span class="inline-flex items-center justify-center w-7 h-7 -ml-3 rounded-full bg-rose-100 border-2 border-rose-700 text-rose-900 font-mono text-xs font-bold shadow-2xs group-hover:scale-105 transition-transform">
-            X
-          </span>
-          <span class="font-semibold tracking-tight text-slate-900 text-base">
-            Spider<span class="text-emerald-700">CSS</span>
-          </span>
-          <span class="hidden sm:inline-block text-xs font-mono px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200">
+        <div class="flex items-center gap-2.5">
+          <a href="#" class="flex items-center gap-2.5 group">
+            <svg
+              class="w-7 h-7 overflow-visible rounded-full shadow-2xs group-hover:scale-105 transition-transform duration-200 ease-out select-none shrink-0"
+              viewBox="0 0 28 28"
+              aria-hidden="true"
+            >
+              <circle
+                cx="14"
+                cy="14"
+                r="12"
+                class="fill-emerald-100 stroke-emerald-700"
+                stroke-width="2"
+              />
+              <text
+                x="14"
+                y="14.5"
+                text-anchor="middle"
+                dominant-baseline="central"
+                class="fill-emerald-900 font-mono text-xs font-bold"
+                style="dominant-baseline: central;"
+              >Z</text>
+            </svg>
+            <svg
+              class="w-7 h-7 -ml-3 overflow-visible rounded-full shadow-2xs group-hover:scale-105 transition-transform duration-200 ease-out select-none shrink-0"
+              viewBox="0 0 28 28"
+              aria-hidden="true"
+            >
+              <circle
+                cx="14"
+                cy="14"
+                r="12"
+                class="fill-rose-100 stroke-rose-700"
+                stroke-width="2"
+              />
+              <text
+                x="14"
+                y="14.5"
+                text-anchor="middle"
+                dominant-baseline="central"
+                class="fill-rose-900 font-mono text-xs font-bold"
+                style="dominant-baseline: central;"
+              >X</text>
+            </svg>
+            <span class="font-semibold tracking-tight text-slate-900 text-base">
+              Spider<span class="text-emerald-700">CSS</span>
+            </span>
+          </a>
+          <a
+            href="https://arxiv.org/abs/2610.03714"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="hidden sm:inline-block text-xs font-mono px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200 hover:bg-slate-200 hover:text-slate-900 hover:border-slate-300 transition-colors"
+          >
             arXiv:2610.03714
-          </span>
-        </a>
+          </a>
+        </div>
 
         <nav class="flex items-center gap-1 sm:gap-4 text-sm font-medium text-slate-600">
           <a href="#overview" class="px-2.5 py-1.5 rounded-lg hover:text-slate-900 hover:bg-slate-100 transition-colors">
