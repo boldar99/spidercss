@@ -1,33 +1,314 @@
 import React, { useMemo, useState } from 'react';
 import { useStore } from '@nanostores/react';
 import {
-  Sparkles,
-  ShieldAlert,
-  Split,
-  Network,
+  ArrowLeft,
   ArrowRight,
-  CheckCircle2,
-  Info,
+  GitBranch,
 } from 'lucide-react';
+import * as d3 from 'd3';
+import { solveLinearSystemGF2, transposeGF2 } from '../../engine/gf2';
+import { computeXSpiderSplits, getConjM } from '../../engine/hookErrors';
+import {
+  getUndirectedEdges,
+  getUndirectedNeighbors,
+  wellOrderedFtCatStateData,
+} from '../../engine/catState';
 import {
   $compilerStore,
   setAnalyzeHookErrors,
   setPostPhase2Branch,
-  setRewriteStage,
 } from '../../stores/compilerStore';
-import {
-  characterizeStabilizerSplits,
-  computeXSpiderSplits,
-  getConjM,
-} from '../../engine/hookErrors';
-import {
-  getUndirectedEdges,
-  hasUndirectedEdge,
-  wellOrderedCompositeCatStateData,
-  wellOrderedFtCatStateData,
-} from '../../engine/catState';
-import { minimumNumberOfFlags } from '../../engine/optimizeParityMatrix';
-import { Math as KaTeXMath } from '../common/Math';
+import { Math as MathTex } from '../common/Math';
+
+interface BipartiteEdgeItem {
+  key: string;
+  rowIdx: number;
+  npIdx: number;
+  pivotCol: number;
+  nonPivotCol: number;
+}
+
+interface CatSubgraphNode {
+  localId: number;
+  x: number;
+  y: number;
+  isMark: boolean;
+}
+
+interface CatSubgraphData {
+  nodes: Map<number, CatSubgraphNode>;
+  internalEdges: Array<{ u: number; v: number }>;
+  portNodeIds: number[];
+}
+
+type StageId = 'idealized' | 'noisy' | 'hook-splits' | 'cat-unfused';
+
+interface RewriteStepSpec {
+  leftStage: StageId;
+  rightStage: StageId;
+  leftTitle: string;
+  rightTitle: string;
+  eqSub?: string;
+}
+
+/**
+ * Computes a clean, untangled 2D layout for an unrooted SpiderCat graph `G` (for m >= 4 legs):
+ * - For t = 1 (or m <= 5), `G` is a simple m-cycle: we walk the cycle in order around a regular m-gon.
+ * - For t >= 2 and m >= 6, `G` has `m` marked boundary ports (degree 2 in G) and `k` unmarked internal
+ *   degree-3 hubs: we run a deterministic two-stage concentric d3-force layout that orders the marked
+ *   ports around the outer polygon of radius `outerR` and relaxes the unmarked degree-3 hubs symmetrically
+ *   inside an inner radius `innerR`.
+ * - Finally, the layout is rigidly rotated and positioned so that:
+ *   1. If the spider has an output boundary wire at `y = anchorY`, its assigned port sits at `y = anchorY`
+ *      so the horizontal output wire remains strictly horizontal.
+ *   2. The remaining `m - 1` external legs are matched in cyclic angular order around the cluster center
+ *      to the remaining `m - 1` marked boundary ports, preventing external wires from crossing over the cluster.
+ */
+function buildSpiderCatLayout(
+  m: number,
+  t: number,
+  baseX: number,
+  anchorY: number,
+  isRowSpider: boolean,
+  hasOutputWire: boolean,
+  otherLegTargets: Array<{ x: number; y: number }>
+): {
+  nodes: Map<number, CatSubgraphNode>;
+  internalEdges: Array<{ u: number; v: number }>;
+  outputPortId: number | null;
+  otherLegPortIds: number[];
+} {
+  const state = wellOrderedFtCatStateData(m, t, false);
+  const allNodeIds = Array.from(state.G.nodes.keys());
+  const internalEdges = getUndirectedEdges(state.G).map((e) => ({
+    u: e.source,
+    v: e.target,
+  }));
+
+  const markedIds = allNodeIds.filter(
+    (id) => state.G.nodes.get(id)?.is_mark ?? false
+  );
+  const unmarkedIds = allNodeIds.filter(
+    (id) => !(state.G.nodes.get(id)?.is_mark ?? false)
+  );
+
+  const outerR = m <= 4 ? 17.5 : m <= 6 ? 20.5 : 23;
+  const innerR = outerR * 0.44;
+
+  // Step 1: Find cyclic order of `markedIds` around the outer ring, and canonical (ux, uy) for all nodes
+  let orderedMarkedIds: number[] = [];
+  const canonicalPos = new Map<number, { x: number; y: number }>();
+
+  if (unmarkedIds.length === 0) {
+    // Simple cycle of length m: walk the cycle in adjacency order so 0 internal crossings occur
+    const startId = markedIds[0] ?? allNodeIds[0];
+    const visited = new Set<number>([startId]);
+    orderedMarkedIds.push(startId);
+    let curr = startId;
+    while (orderedMarkedIds.length < markedIds.length) {
+      const nbrs = getUndirectedNeighbors(state.G, curr);
+      const next = nbrs.find((v) => !visited.has(v));
+      if (next === undefined) break;
+      visited.add(next);
+      orderedMarkedIds.push(next);
+      curr = next;
+    }
+    for (const id of markedIds) {
+      if (!visited.has(id)) orderedMarkedIds.push(id);
+    }
+    orderedMarkedIds.forEach((id, idx) => {
+      const ang = (2 * Math.PI * idx) / orderedMarkedIds.length;
+      canonicalPos.set(id, {
+        x: Math.cos(ang) * outerR,
+        y: Math.sin(ang) * outerR,
+      });
+    });
+  } else {
+    // General SpiderCat graph (t >= 2, m >= 6) with internal degree-3 hubs
+    interface SimNode extends d3.SimulationNodeDatum {
+      id: number;
+      isMark: boolean;
+      x: number;
+      y: number;
+      fx?: number;
+      fy?: number;
+    }
+    const simNodes: SimNode[] = allNodeIds.map((id, idx) => {
+      const isMark = state.G.nodes.get(id)?.is_mark ?? false;
+      const r0 = isMark ? outerR : innerR;
+      const ang = (2 * Math.PI * idx) / allNodeIds.length;
+      return {
+        id,
+        isMark,
+        x: Math.cos(ang) * r0,
+        y: Math.sin(ang) * r0,
+      };
+    });
+    const simLinks = internalEdges.map((e) => ({
+      source: e.u,
+      target: e.v,
+    }));
+
+    const sim1 = d3
+      .forceSimulation<SimNode>(simNodes)
+      .force(
+        'link',
+        d3
+          .forceLink<SimNode, { source: number; target: number }>(simLinks)
+          .id((d) => d.id)
+          .distance(14)
+          .strength(1.2)
+      )
+      .force('charge', d3.forceManyBody<SimNode>().strength(-55))
+      .force(
+        'radial',
+        d3
+          .forceRadial<SimNode>((d) => (d.isMark ? outerR : innerR), 0, 0)
+          .strength(1.8)
+      )
+      .stop();
+
+    for (let i = 0; i < 240; i++) sim1.tick();
+
+    const sortedMarked = simNodes
+      .filter((d) => d.isMark)
+      .sort((a, b) => Math.atan2(a.y, a.x) - Math.atan2(b.y, b.x));
+
+    orderedMarkedIds = sortedMarked.map((d) => d.id);
+    sortedMarked.forEach((n, idx) => {
+      const ang = (2 * Math.PI * idx) / sortedMarked.length;
+      n.fx = Math.cos(ang) * outerR;
+      n.fy = Math.sin(ang) * outerR;
+      n.x = n.fx;
+      n.y = n.fy;
+    });
+
+    const sim2 = d3
+      .forceSimulation<SimNode>(simNodes)
+      .force(
+        'link',
+        d3
+          .forceLink<SimNode, { source: number; target: number }>(simLinks)
+          .id((d) => d.id)
+          .distance(10)
+          .strength(1.5)
+      )
+      .force('charge', d3.forceManyBody<SimNode>().strength(-25))
+      .force(
+        'radial',
+        d3
+          .forceRadial<SimNode>((d) => (d.isMark ? outerR : innerR), 0, 0)
+          .strength(2.2)
+      )
+      .force('collide', d3.forceCollide<SimNode>(7.2))
+      .stop();
+
+    for (let i = 0; i < 180; i++) sim2.tick();
+
+    for (const n of simNodes) {
+      canonicalPos.set(n.id, { x: n.x, y: n.y });
+    }
+  }
+
+  // Step 2: Determine cluster orientation angle `theta0` and center `(cx, cy)`
+  // so that port 0 sits at `y = anchorY` (keeping the output wire strictly horizontal!)
+  let theta0 = 0;
+  if (isRowSpider) {
+    const avgDy =
+      otherLegTargets.length > 0
+        ? otherLegTargets.reduce((acc, p) => acc + (p.y - anchorY), 0) /
+          otherLegTargets.length
+        : 0;
+    const minDy =
+      otherLegTargets.length > 0
+        ? Math.min(...otherLegTargets.map((p) => p.y - anchorY))
+        : 0;
+    const maxDy =
+      otherLegTargets.length > 0
+        ? Math.max(...otherLegTargets.map((p) => p.y - anchorY))
+        : 0;
+
+    if (minDy >= -4 && avgDy > 10) {
+      theta0 = -Math.PI / 3;
+    } else if (maxDy <= 4 && avgDy < -10) {
+      theta0 = Math.PI / 3;
+    } else {
+      theta0 = -Math.PI / 5;
+    }
+  } else {
+    theta0 = 0;
+  }
+
+  const cos0 = Math.cos(theta0);
+  const sin0 = Math.sin(theta0);
+
+  const cx = isRowSpider ? baseX - outerR * cos0 * 0.35 : baseX;
+  const cy = anchorY - outerR * sin0;
+
+  const nodes = new Map<number, CatSubgraphNode>();
+  for (const [id, p] of canonicalPos.entries()) {
+    const rx = p.x * cos0 - p.y * sin0;
+    const ry = p.x * sin0 + p.y * cos0;
+    nodes.set(id, {
+      localId: id,
+      x: cx + rx,
+      y: cy + ry,
+      isMark: state.G.nodes.get(id)?.is_mark ?? false,
+    });
+  }
+
+  // Step 3: Assign ports in cyclic angular order around `(cx, cy)`
+  const outputPortId = hasOutputWire ? (orderedMarkedIds[0] ?? null) : null;
+  const remainingPorts = hasOutputWire
+    ? orderedMarkedIds.slice(1)
+    : orderedMarkedIds.slice();
+
+  const ccwDeltaFromTheta0 = (ang: number) => {
+    let d = (ang - theta0) % (2 * Math.PI);
+    if (d <= 1e-6) d += 2 * Math.PI;
+    return d;
+  };
+
+  const indexedTargets = otherLegTargets.map((target, idx) => ({
+    idx,
+    ccw: ccwDeltaFromTheta0(Math.atan2(target.y - cy, target.x - cx)),
+  }));
+  indexedTargets.sort((a, b) => a.ccw - b.ccw);
+
+  const otherLegPortIds = new Array<number>(otherLegTargets.length);
+  indexedTargets.forEach((item, rank) => {
+    otherLegPortIds[item.idx] =
+      remainingPorts[rank % Math.max(1, remainingPorts.length)] ??
+      orderedMarkedIds[0] ??
+      0;
+  });
+
+  return {
+    nodes,
+    internalEdges,
+    outputPortId,
+    otherLegPortIds,
+  };
+}
+
+/**
+ * Authentic LaTeX \FaultEq (\newcommand{\FaultEq}{\mathrel{\widehat{=}}}) rendered via KaTeX.
+ */
+const FaultEqSymbol: React.FC<{ sub?: string; className?: string }> = ({
+  sub,
+  className = '',
+}) => (
+  <div className={`inline-flex items-center justify-center select-none ${className}`}>
+    <MathTex
+      tex={
+        sub
+          ? `\\underset{\\text{${sub}}}{\\mathrel{\\widehat{=}}}`
+          : '\\mathrel{\\widehat{=}}'
+      }
+      className="text-xl sm:text-2xl text-slate-800"
+    />
+  </div>
+);
 
 export const ZxRewritesView: React.FC = () => {
   const state = useStore($compilerStore);
@@ -36,977 +317,1260 @@ export const ZxRewritesView: React.FC = () => {
     d,
     validation,
     rrefSnapshot,
-    rewriteStage,
-    analyzeHookErrors,
+    analyzeHookErrors: useHookSplits,
   } = state;
+  const prepMatrix = rrefSnapshot.unpermutedMatrix;
+  const pivots = rrefSnapshot.pivots;
 
-  const matrix = rrefSnapshot.unpermutedMatrix;
-  const { pivots, nonPivots, cost } = rrefSnapshot;
+  const numRows = prepMatrix.length;
+  const n = validation.n;
   const t = validation.t;
 
-  const [selectedFaultEdgeIdx, setSelectedFaultEdgeIdx] = useState<number>(0);
-  const [selectedFaultType, setSelectedFaultType] = useState<'X' | 'Z'>('X');
-  const [selectedCatSpider, setSelectedCatSpider] = useState<{
-    side: 'row' | 'col';
-    index: number;
-  }>({ side: 'row', index: 0 });
+  const pivotCols = useMemo(
+    () => new Set(Object.values(pivots)),
+    [pivots]
+  );
 
-  const xT = validation.isPerfect ? Math.max(0, t - 1) : t;
+  const nonPivots = useMemo(() => {
+    const cols: number[] = [];
+    for (let c = 0; c < n; c++) {
+      if (!pivotCols.has(c)) cols.push(c);
+    }
+    return cols;
+  }, [n, pivotCols]);
 
-  // Compute safe hook-error splits (both compiler-active and theoretical characterization)
-  const hookAnalysis = useMemo(() => {
-    const activeSplits = computeXSpiderSplits(matrix, d, analyzeHookErrors);
-    const M_prep = getConjM(matrix);
-    const theoreticalMap = characterizeStabilizerSplits(M_prep);
-
-    const colDetails = nonPivots.map((colQubit, npIdx) => {
-      const supp: number[] = [];
-      for (let c = 0; c < (M_prep[npIdx]?.length ?? 0); c++) {
-        if (M_prep[npIdx][c] === 1) supp.push(c);
-      }
-      const suppKey = supp.join(',');
-      const charRes = theoreticalMap.get(suppKey);
-      const unsplitDeg = supp.length;
-      const unsplitFlagsAtT =
-        unsplitDeg > 1 ? minimumNumberOfFlags(unsplitDeg, t) : 0;
-      const unsplitFlags =
-        unsplitDeg > 1 ? minimumNumberOfFlags(unsplitDeg, xT) : 0;
-
-      const activeChunks = activeSplits.xSplits[npIdx] ?? [supp];
-      const activeSizes = activeSplits.xSpiders[npIdx] ?? [unsplitDeg];
-
-      // Theoretical best shape
-      const theoShape =
-        charRes?.universal?.[0] ?? charRes?.partial?.[0] ?? [unsplitDeg];
-
-      const splitFlags =
-        !validation.isPerfect && theoShape.length > 1
-          ? theoShape.reduce((acc, sz, k) => {
-              const effDeg =
-                k === 0 || k === theoShape.length - 1 ? sz + 1 : sz + 2;
-              return acc + minimumNumberOfFlags(effDeg, xT);
-            }, 0)
-          : unsplitFlags;
-
-      return {
-        npIdx,
-        colQubit,
-        support: supp,
-        unsplitDeg,
-        unsplitFlagsAtT,
-        unsplitFlags,
-        activeChunks,
-        activeSizes,
-        theoShape,
-        splitFlags,
-        hasSafeSplit: theoShape.length > 1,
-        isUniversal: (charRes?.universal?.length ?? 0) > 0,
-      };
-    });
-
-    const totalUnsplitColFlags = colDetails.reduce(
-      (a, b) => a + b.unsplitFlagsAtT,
-      0
-    );
-    const totalSplitColFlags = colDetails.reduce(
-      (a, b) => a + b.splitFlags,
-      0
-    );
-
-    return {
-      activeSplits,
-      colDetails,
-      totalUnsplitColFlags,
-      totalSplitColFlags,
-      flagsSaved: Math.max(0, totalUnsplitColFlags - totalSplitColFlags),
-    };
-  }, [matrix, d, analyzeHookErrors, nonPivots, t, xT, validation.isPerfect]);
-
-  // Build list of internal bipartite edges for Stage 1 fault propagation demo
-  const bipartiteEdges = useMemo(() => {
-    const list: Array<{
-      rIdx: number;
-      npIdx: number;
-      pivotQubit: number;
-      colQubit: number;
-    }> = [];
-    for (let rIdx = 0; rIdx < matrix.length; rIdx++) {
-      for (let npIdx = 0; npIdx < nonPivots.length; npIdx++) {
-        const colQubit = nonPivots[npIdx];
-        if (matrix[rIdx]?.[colQubit] === 1) {
-          list.push({
-            rIdx,
+  // All bipartite internal edges between row spiders and non-pivot column spiders
+  const bipartiteEdges = useMemo<BipartiteEdgeItem[]>(() => {
+    const items: BipartiteEdgeItem[] = [];
+    for (let r = 0; r < numRows; r++) {
+      const pCol = pivots[r];
+      if (pCol === undefined) continue;
+      nonPivots.forEach((npCol, npIdx) => {
+        if (prepMatrix[r]?.[npCol] === 1) {
+          items.push({
+            key: `r${r}-np${npIdx}`,
+            rowIdx: r,
             npIdx,
-            pivotQubit: pivots[rIdx],
-            colQubit,
+            pivotCol: pCol,
+            nonPivotCol: npCol,
           });
         }
+      });
+    }
+    return items;
+  }, [numRows, pivots, nonPivots, prepMatrix]);
+
+  // Safe hook-error split analysis via computeXSpiderSplits & getConjM
+  const hookAnalysis = useMemo(
+    () => computeXSpiderSplits(prepMatrix, d, useHookSplits),
+    [prepMatrix, d, useHookSplits]
+  );
+
+  const conjM = useMemo(() => getConjM(prepMatrix), [prepMatrix]);
+
+  const safeSplits = useMemo(() => {
+    const items: Array<{
+      npIdx: number;
+      chunkIdx: number;
+      leftSupport: number[];
+      equivalentSingleQubit: number | null;
+      stabilizerNpIndices: number[];
+    }> = [];
+    if (!useHookSplits) return items;
+
+    const conjMT = transposeGF2(conjM);
+
+    hookAnalysis.xSplits.forEach((chunks, npIdx) => {
+      if (chunks.length <= 1) return;
+      const prefixSupport: number[] = [];
+      for (let cIdx = 0; cIdx < chunks.length - 1; cIdx++) {
+        prefixSupport.push(...chunks[cIdx]);
+        const leftSupport = [...prefixSupport].sort((a, b) => a - b);
+
+        const vA = new Array<number>(n).fill(0);
+        for (const q of leftSupport) vA[q] ^= 1;
+
+        let foundQ: number | null = null;
+        let foundSol: number[] = [];
+
+        for (let q = 0; q < n; q++) {
+          const rhs = vA.slice();
+          rhs[q] ^= 1;
+          const sol = solveLinearSystemGF2(conjMT, rhs);
+          if (sol !== null) {
+            foundQ = q;
+            foundSol = sol;
+            break;
+          }
+        }
+
+        const stabilizerNpIndices: number[] = [];
+        foundSol.forEach((bit, j) => {
+          if (bit === 1) stabilizerNpIndices.push(j);
+        });
+
+        items.push({
+          npIdx,
+          chunkIdx: cIdx,
+          leftSupport,
+          equivalentSingleQubit: foundQ,
+          stabilizerNpIndices,
+        });
       }
-    }
-    return list;
-  }, [matrix, nonPivots, pivots]);
+    });
 
-  const activeFaultEdge =
-    bipartiteEdges[
-      Math.min(selectedFaultEdgeIdx, Math.max(0, bipartiteEdges.length - 1))
-    ] ?? null;
+    return items;
+  }, [useHookSplits, hookAnalysis, conjM, n]);
 
-  // Stage 3: Precomputed Well-Ordered Cat State for the currently inspected spider
-  const inspectedCatState = useMemo(() => {
-    const isRow = selectedCatSpider.side === 'row';
-    if (isRow) {
-      const rIdx = Math.min(
-        selectedCatSpider.index,
-        Math.max(0, matrix.length - 1)
-      );
-      const deg = cost.rowWeights[rIdx] ?? 1;
-      const cat = wellOrderedFtCatStateData(deg, t, true);
-      return {
-        label: `${basis === 'Z' ? 'Z' : 'X'}_${rIdx} (Row Spider, Pivot q_${
-          pivots[rIdx]
-        }, t=${t})`,
-        spiderBasis: basis,
-        deg,
-        chunks: [deg],
-        effectiveT: t,
-        cat,
-      };
-    } else {
-      const npIdx = Math.min(
-        selectedCatSpider.index,
-        Math.max(0, nonPivots.length - 1)
-      );
-      const detail = hookAnalysis.colDetails[npIdx];
-      const deg = detail?.unsplitDeg ?? 2;
-      const chunks =
-        !validation.isPerfect && analyzeHookErrors && detail?.theoShape.length > 1
-          ? detail.theoShape
-          : [deg];
-      const cat =
-        chunks.length > 1
-          ? wellOrderedCompositeCatStateData(chunks, xT)
-          : wellOrderedFtCatStateData(deg, xT, true);
-      const colBasis = basis === 'Z' ? 'X' : 'Z';
-      return {
-        label: `${colBasis}_${npIdx} (Non-Pivot Col q_${nonPivots[npIdx]}, t_${colBasis}=${xT}${
-          validation.isPerfect ? ' [Perfect QECC t−1]' : ''
-        })`,
-        spiderBasis: colBasis,
-        deg,
-        chunks,
-        effectiveT: xT,
-        cat,
-      };
+  // Dynamic rewrite steps: 3 steps when Safe Hook Splits is enabled on d=3, 2 steps when unselected
+  const activeRewriteSteps = useMemo<RewriteStepSpec[]>(() => {
+    if (useHookSplits && d === 3) {
+      return [
+        {
+          leftStage: 'idealized',
+          rightStage: 'noisy',
+          leftTitle: 'Idealized bipartite diagram',
+          rightTitle: 'Replace idealized edges with noisy edges',
+          eqSub: 'CSS',
+        },
+        {
+          leftStage: 'noisy',
+          rightStage: 'hook-splits',
+          leftTitle: 'Replace idealized edges with noisy edges',
+          rightTitle: 'Unfuse along safe hook errors',
+        },
+        {
+          leftStage: 'hook-splits',
+          rightStage: 'cat-unfused',
+          leftTitle: 'Unfuse along safe hook errors',
+          rightTitle: 'Fault-equivalently unfuse high-degree spiders',
+        },
+      ];
     }
-  }, [
-    selectedCatSpider,
-    matrix.length,
-    cost.rowWeights,
-    t,
-    xT,
-    validation.isPerfect,
-    basis,
-    pivots,
-    nonPivots,
-    hookAnalysis.colDetails,
-    analyzeHookErrors,
-  ]);
+    return [
+      {
+        leftStage: 'idealized',
+        rightStage: 'noisy',
+        leftTitle: 'Idealized bipartite diagram',
+        rightTitle: 'Replace idealized edges with noisy edges',
+        eqSub: 'CSS',
+      },
+      {
+        leftStage: 'noisy',
+        rightStage: 'cat-unfused',
+        leftTitle: 'Replace idealized edges with noisy edges',
+        rightTitle: 'Fault-equivalently unfuse high-degree spiders',
+      },
+    ];
+  }, [useHookSplits, d]);
+
+  const [rewriteStep, setRewriteStep] = useState<number>(0);
+  const safeRewriteStep = Math.min(
+    rewriteStep,
+    Math.max(0, activeRewriteSteps.length - 1)
+  );
+  const currentStepSpec = activeRewriteSteps[safeRewriteStep];
+
+  // Interactive fault propagation state (starts with NO edge selected)
+  const [selectedEdgeKey, setSelectedEdgeKey] = useState<string | null>(null);
+  const [faultBasis, setFaultBasis] = useState<'X' | 'Z'>(
+    basis === 'Z' ? 'X' : 'Z'
+  );
+  const [selectedHookKey, setSelectedHookKey] = useState<string | null>(null);
+
+  const effectiveEdgeKey = useMemo(() => {
+    if (
+      selectedEdgeKey &&
+      bipartiteEdges.some((e) => e.key === selectedEdgeKey)
+    ) {
+      return selectedEdgeKey;
+    }
+    return null;
+  }, [selectedEdgeKey, bipartiteEdges]);
+
+  const activeEdge = useMemo(
+    () => bipartiteEdges.find((e) => e.key === effectiveEdgeKey) ?? null,
+    [bipartiteEdges, effectiveEdgeKey]
+  );
+
+  const effectiveHookKey = useMemo(() => {
+    if (!useHookSplits || safeSplits.length === 0) return null;
+    if (
+      selectedHookKey &&
+      safeSplits.some(
+        (s) => `${s.npIdx}-${s.chunkIdx}` === selectedHookKey
+      )
+    ) {
+      return selectedHookKey;
+    }
+    return null;
+  }, [useHookSplits, safeSplits, selectedHookKey]);
+
+  const activeHookSplit = useMemo(
+    () =>
+      safeSplits.find(
+        (s) => `${s.npIdx}-${s.chunkIdx}` === effectiveHookKey
+      ) ?? null,
+    [safeSplits, effectiveHookKey]
+  );
+
+  // Spider colors and basis symbols
+  const rowSym: 'Z' | 'X' = basis === 'Z' ? 'Z' : 'X';
+  const colSym: 'Z' | 'X' = basis === 'Z' ? 'X' : 'Z';
 
   const rowFill = basis === 'Z' ? '#86efac' : '#fca5a5';
   const rowStroke = basis === 'Z' ? '#15803d' : '#b91c1c';
-  const rowSym = basis === 'Z' ? 'Z' : 'X';
-
   const colFill = basis === 'Z' ? '#fca5a5' : '#86efac';
   const colStroke = basis === 'Z' ? '#b91c1c' : '#15803d';
-  const colSym = basis === 'Z' ? 'X' : 'Z';
 
-  return (
-    <div className="rounded-2xl border-2 border-purple-200 bg-white p-5 sm:p-6 shadow-2xs">
-      {/* Header */}
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-slate-100 pb-4">
-        <div>
-          <div className="flex items-center gap-2">
-            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-mono font-semibold bg-purple-100 text-purple-900 border border-purple-300">
-              Section III.A Theory Branch
-            </span>
-            <h3 className="text-lg font-bold text-slate-900">
-              Fault-Equivalent ZX-Calculus Rewrites (Figure 4 of Paper)
-            </h3>
-          </div>
-          <p className="text-xs text-slate-600 mt-1">
-            Step through the three fault-equivalent transformations that convert the idealized bipartite ZX-diagram into an extractable 3-ary spider network without sacrificing code distance.
-          </p>
-        </div>
+  // Previous Z (green) and X (red) colors for fault badges and solid propagation lines
+  const faultFill = faultBasis === 'X' ? '#fca5a5' : '#86efac';
+  const faultStroke = faultBasis === 'X' ? '#b91c1c' : '#15803d';
 
-        <button
-          type="button"
-          onClick={() => setPostPhase2Branch('pipeline')}
-          className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-700 text-white text-xs font-semibold hover:bg-emerald-800 transition-colors shadow-2xs cursor-pointer self-start lg:self-auto"
-        >
-          Switch to [Show Pipeline] (Phase 3) <ArrowRight className="w-3.5 h-3.5" />
-        </button>
-      </div>
+  // On the safe hook split edge, a hook error is a `rowSym` phase flip (Z in Z-basis, X in X-basis)
+  const hookFaultFill = rowSym === 'X' ? '#fca5a5' : '#86efac';
+  const hookFaultStroke = rowSym === 'X' ? '#b91c1c' : '#15803d';
 
-      {/* 3-Stage Stepper Bar */}
-      <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-2.5">
-        <button
-          type="button"
-          onClick={() => setRewriteStage(1)}
-          className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
-            rewriteStage === 1
-              ? 'bg-purple-950 text-white border-purple-950 shadow-xs'
-              : 'bg-slate-50 text-slate-800 border-slate-200 hover:bg-slate-100'
-          }`}
-        >
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-mono font-bold uppercase tracking-wider opacity-80">
-              Step 1.2
-            </span>
-            <ShieldAlert className="w-4 h-4 opacity-80" />
-          </div>
-          <div className="text-sm font-bold mt-1">
-            1. Unidealize Internal Edges
-          </div>
-          <p
-            className={`text-[11px] mt-0.5 ${
-              rewriteStage === 1 ? 'text-purple-200' : 'text-slate-500'
-            }`}
-          >
-            Propositions III.3 &amp; III.4: Purple idealized → Black noisy edges
-          </p>
-        </button>
+  // Correct fault propagation direction on unidealized internal edge:
+  // X errors go to X spiders' boundary wire; Z errors go to Z spiders' boundary wire.
+  const unidealizedPropagatedQubit = useMemo<number | null>(() => {
+    if (!activeEdge) return null;
+    if (faultBasis === rowSym) {
+      return activeEdge.pivotCol;
+    }
+    return activeEdge.nonPivotCol;
+  }, [activeEdge, faultBasis, rowSym]);
 
-        <button
-          type="button"
-          onClick={() => setRewriteStage(2)}
-          className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
-            rewriteStage === 2
-              ? 'bg-purple-950 text-white border-purple-950 shadow-xs'
-              : 'bg-slate-50 text-slate-800 border-slate-200 hover:bg-slate-100'
-          }`}
-        >
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-mono font-bold uppercase tracking-wider opacity-80">
-              Step 1.3.1
-            </span>
-            <Split className="w-4 h-4 opacity-80" />
-          </div>
-          <div className="text-sm font-bold mt-1">
-            2. Safe Hook-Error Splits
-          </div>
-          <p
-            className={`text-[11px] mt-0.5 ${
-              rewriteStage === 2 ? 'text-purple-200' : 'text-slate-500'
-            }`}
-          >
-            Unfuse high-degree spiders along stabilizer-equivalent hook errors
-          </p>
-        </button>
+  // Compute the copy / fusion / copy path on the bipartite graph between the selected safe hook split edge
+  // and its single equivalent output wire q*
+  const hookPropagationPath = useMemo(() => {
+    const empty = {
+      equivalentWire: null as number | null,
+      activeEdgeKeys: new Set<string>(),
+      activeRowIndices: new Set<number>(),
+      activeNpIndices: new Set<number>(),
+    };
+    if (!activeHookSplit || activeHookSplit.equivalentSingleQubit === null) {
+      return empty;
+    }
 
-        <button
-          type="button"
-          onClick={() => setRewriteStage(3)}
-          className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
-            rewriteStage === 3
-              ? 'bg-purple-950 text-white border-purple-950 shadow-xs'
-              : 'bg-slate-50 text-slate-800 border-slate-200 hover:bg-slate-100'
-          }`}
-        >
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-mono font-bold uppercase tracking-wider opacity-80">
-              Step 1.3.2
-            </span>
-            <Network className="w-4 h-4 opacity-80" />
-          </div>
-          <div className="text-sm font-bold mt-1">
-            3. Well-Ordered Cat Unfusion
-          </div>
-          <p
-            className={`text-[11px] mt-0.5 ${
-              rewriteStage === 3 ? 'text-purple-200' : 'text-slate-500'
-            }`}
-          >
-            Expand high-arity spiders into 3-ary SpiderCat graphs (G, F, D)
-          </p>
-        </button>
-      </div>
+    const qStar = activeHookSplit.equivalentSingleQubit;
+    const colToNpIdx = new Map<number, number>();
+    nonPivots.forEach((col, idx) => colToNpIdx.set(col, idx));
 
-      {/* Stage 1 Content: Unidealizing Internal Bipartite Edges */}
-      {rewriteStage === 1 && (
-        <div className="mt-5 grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
-          <div className="lg:col-span-5 space-y-3.5">
-            <div className="rounded-xl border border-purple-200 bg-purple-50/50 p-4">
-              <h4 className="text-xs font-bold uppercase tracking-wider text-purple-950">
-                Proposition III.4 (Fault-Equivalent Edge Unidealization)
-              </h4>
-              <p className="text-xs text-slate-700 mt-1.5 leading-relaxed">
-                Because our RREF basis guarantees that every row spider{' '}
-                <KaTeXMath tex={`${rowSym}_j`} /> has its own unique-one pivot boundary leg{' '}
-                <KaTeXMath tex="q_{p_j}" /> and every non-pivot column spider{' '}
-                <KaTeXMath tex={`${colSym}_i`} /> has its own boundary leg{' '}
-                <KaTeXMath tex="q_i" />, both endpoints of every internal edge have at least one noisy boundary leg.
-              </p>
-              <div className="mt-3 rounded-lg bg-white border border-purple-200/80 p-3 text-xs text-slate-800">
-                <div className="font-semibold text-purple-900 mb-1">
-                  Why is unidealization fault-equivalent under CSS noise?
-                </div>
-                <ul className="space-y-1.5 text-[11px] text-slate-600 list-disc pl-4">
-                  <li>
-                    A single internal <strong>Z-fault</strong> (<KaTeXMath tex="Z(\pi)" />) is absorbed by the{' '}
-                    <KaTeXMath tex="Z" />-spider and pushed through the{' '}
-                    <KaTeXMath tex="X" />-spider onto its single boundary wire — a weight-1 boundary fault!
-                  </li>
-                  <li>
-                    A single internal <strong>X-fault</strong> (<KaTeXMath tex="X(\pi)" />) is absorbed by the{' '}
-                    <KaTeXMath tex="X" />-spider and pushed through the{' '}
-                    <KaTeXMath tex="Z" />-spider onto its single pivot boundary wire — also weight 1!
-                  </li>
-                </ul>
-              </div>
-            </div>
+    const pivotColToRow = new Map<number, number>();
+    for (let r = 0; r < numRows; r++) {
+      if (pivots[r] !== undefined) {
+        pivotColToRow.set(pivots[r], r);
+      }
+    }
 
-            {/* Interactive Fault Propagation Inspector */}
-            {activeFaultEdge && (
-              <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-                <div className="text-xs font-bold text-slate-800 mb-2">
-                  Interactive Internal Fault Propagation Tester
-                </div>
-                <div className="flex flex-wrap items-center gap-2 mb-3">
-                  <span className="text-xs text-slate-600">Fault Type:</span>
-                  <button
-                    type="button"
-                    onClick={() => setSelectedFaultType('X')}
-                    className={`px-2.5 py-1 rounded-lg text-xs font-mono font-bold cursor-pointer border ${
-                      selectedFaultType === 'X'
-                        ? 'bg-rose-600 text-white border-rose-600'
-                        : 'bg-white text-slate-700 border-slate-200'
-                    }`}
-                  >
-                    X(π) Fault
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setSelectedFaultType('Z')}
-                    className={`px-2.5 py-1 rounded-lg text-xs font-mono font-bold cursor-pointer border ${
-                      selectedFaultType === 'Z'
-                        ? 'bg-emerald-700 text-white border-emerald-700'
-                        : 'bg-white text-slate-700 border-slate-200'
-                    }`}
-                  >
-                    Z(π) Fault
-                  </button>
-                </div>
+    const activeEdgeKeys = new Set<string>();
+    const activeRowIndices = new Set<number>();
+    const activeNpIndices = new Set<number>([activeHookSplit.npIdx]);
 
-                <div className="text-xs text-slate-700 bg-white rounded-lg border border-slate-200 p-3 font-mono">
-                  <div>
-                    Selected Edge: ({rowSym}
-                    <sub>{activeFaultEdge.rIdx}</sub> ↔ {colSym}
-                    <sub>{activeFaultEdge.npIdx}</sub>)
-                  </div>
-                  <div className="mt-1.5 text-emerald-800 font-semibold">
-                    {(basis === 'Z' && selectedFaultType === 'X') ||
-                    (basis === 'X' && selectedFaultType === 'Z')
-                      ? `→ Commutes through ${colSym}_${activeFaultEdge.npIdx} and exits on single pivot boundary leg q_${activeFaultEdge.pivotQubit} (weight 1)!`
-                      : `→ Commutes through ${rowSym}_${activeFaultEdge.rIdx} and exits on single non-pivot boundary leg q_${activeFaultEdge.colQubit} (weight 1)!`}
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
+    for (const pCol of activeHookSplit.leftSupport) {
+      const rIdx = pivotColToRow.get(pCol);
+      if (rIdx !== undefined) {
+        activeRowIndices.add(rIdx);
+        activeEdgeKeys.add(`r${rIdx}-np${activeHookSplit.npIdx}`);
+      }
+    }
 
-          <div className="lg:col-span-7 rounded-xl border border-slate-200 bg-slate-50/50 p-4">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-xs font-semibold text-slate-700">
-                Unidealized Bipartite ZX-Diagram (Click any internal edge to test fault propagation)
-              </span>
-              <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-slate-900 text-white">
-                All {bipartiteEdges.length} edges unidealized (noisy)
-              </span>
-            </div>
+    for (const stabNpIdx of activeHookSplit.stabilizerNpIndices) {
+      activeNpIndices.add(stabNpIdx);
+      const npCol = nonPivots[stabNpIdx];
+      if (npCol === undefined) continue;
+      for (let r = 0; r < numRows; r++) {
+        if (prepMatrix[r]?.[npCol] === 1) {
+          activeRowIndices.add(r);
+          const edgeKey = `r${r}-np${stabNpIdx}`;
+          if (activeEdgeKeys.has(edgeKey)) {
+            activeEdgeKeys.delete(edgeKey);
+          } else {
+            activeEdgeKeys.add(edgeKey);
+          }
+        }
+      }
+    }
 
-            {(() => {
-              const numR = matrix.length;
-              const numC = nonPivots.length;
-              const totalQ = numR + numC;
-              const stepY =
-                totalQ > 24 ? 19 : totalQ > 14 ? 25 : totalQ > 9 ? 31 : 36;
-              const topP = 32;
-              const gapY = stepY * 0.55;
-              const svgH = Math.max(
-                280,
-                topP +
-                  32 +
-                  Math.max(0, numR - 1) * stepY +
-                  gapY +
-                  Math.max(0, numC) * stepY
-              );
-              const rightOutX = 478;
+    const qStarNpIdx = colToNpIdx.get(qStar);
+    if (qStarNpIdx !== undefined) {
+      activeNpIndices.add(qStarNpIdx);
+    }
+    const qStarRowIdx = pivotColToRow.get(qStar);
+    if (qStarRowIdx !== undefined) {
+      activeRowIndices.add(qStarRowIdx);
+    }
 
-              const getRPos = (rIdx: number) => ({
-                x: 110 + (numR <= 1 ? 0.5 : rIdx / (numR - 1)) * 240,
-                y: topP + rIdx * stepY,
-              });
-              const colBaseY = topP + Math.max(1, numR) * stepY + gapY;
-              const getCPos = (npIdx: number) => ({
-                x: 110 + (numC <= 1 ? 0.5 : npIdx / (numC - 1)) * 240,
-                y: colBaseY + npIdx * stepY,
-              });
+    return {
+      equivalentWire: qStar,
+      activeEdgeKeys,
+      activeRowIndices,
+      activeNpIndices,
+    };
+  }, [activeHookSplit, numRows, prepMatrix, nonPivots, pivots]);
 
-              return (
-                <svg
-                  viewBox={`0 0 540 ${svgH}`}
-                  className="w-full h-auto bg-white rounded-lg border border-slate-200/80 select-none"
-                >
-                  {/* Output Boundary Wires (All exiting to the right as a ZX state) */}
-                  {Array.from({ length: numR }, (_, rIdx) => {
-                    const p = getRPos(rIdx);
-                    const exitsPivot =
-                      activeFaultEdge?.rIdx === rIdx &&
-                      ((basis === 'Z' && selectedFaultType === 'X') ||
-                        (basis === 'X' && selectedFaultType === 'Z'));
-                    return (
-                      <g key={`rw-${rIdx}`}>
-                        <line
-                          x1={p.x}
-                          y1={p.y}
-                          x2={rightOutX}
-                          y2={p.y}
-                          stroke={exitsPivot ? '#dc2626' : '#1e293b'}
-                          strokeWidth={exitsPivot ? 3.4 : 1.8}
-                        />
-                        <text
-                          x={rightOutX + 8}
-                          y={p.y + 4}
-                          textAnchor="start"
-                          className="font-mono text-[10.5px] font-semibold fill-slate-700"
-                        >
-                          q_{pivots[rIdx]}
-                        </text>
-                        {exitsPivot && (
-                          <circle
-                            cx={rightOutX - 38}
-                            cy={p.y}
-                            r={8}
-                            fill={
-                              selectedFaultType === 'X' ? '#fca5a5' : '#86efac'
-                            }
-                            stroke="#dc2626"
-                            strokeWidth={2}
-                          />
-                        )}
-                      </g>
-                    );
-                  })}
+  // Non-pivot chunk decomposition for stage 3 ("Unfuse along safe hook errors") and stage 4 ("cat-unfused")
+  const npChunkGroups = useMemo(() => {
+    return nonPivots.map((npCol, npIdx) => {
+      const connectedRows: number[] = [];
+      for (let r = 0; r < numRows; r++) {
+        if (prepMatrix[r]?.[npCol] === 1) {
+          connectedRows.push(r);
+        }
+      }
+      const chunks = hookAnalysis.xSpiders[npIdx] ?? [connectedRows.length + 1];
+      const rowChunks: number[][] = [];
+      let cursor = 0;
+      chunks.forEach((cSize, cIdx) => {
+        const numIncidentRows = cIdx === chunks.length - 1 ? cSize - 1 : cSize;
+        rowChunks.push(connectedRows.slice(cursor, cursor + numIncidentRows));
+        cursor += numIncidentRows;
+      });
+      return {
+        npIdx,
+        npCol,
+        chunks,
+        rowChunks,
+      };
+    });
+  }, [nonPivots, numRows, prepMatrix, hookAnalysis]);
 
-                  {nonPivots.map((colQ, npIdx) => {
-                    const p = getCPos(npIdx);
-                    const exitsCol =
-                      activeFaultEdge?.npIdx === npIdx &&
-                      ((basis === 'Z' && selectedFaultType === 'Z') ||
-                        (basis === 'X' && selectedFaultType === 'X'));
-                    return (
-                      <g key={`cw-${colQ}`}>
-                        <line
-                          x1={p.x}
-                          y1={p.y}
-                          x2={rightOutX}
-                          y2={p.y}
-                          stroke={exitsCol ? '#dc2626' : '#1e293b'}
-                          strokeWidth={exitsCol ? 3.4 : 1.8}
-                        />
-                        <text
-                          x={rightOutX + 8}
-                          y={p.y + 4}
-                          textAnchor="start"
-                          className="font-mono text-[10.5px] font-semibold fill-slate-700"
-                        >
-                          q_{colQ}
-                        </text>
-                        {exitsCol && (
-                          <circle
-                            cx={rightOutX - 38}
-                            cy={p.y}
-                            r={8}
-                            fill={
-                              selectedFaultType === 'X' ? '#fca5a5' : '#86efac'
-                            }
-                            stroke="#dc2626"
-                            strokeWidth={2}
-                          />
-                        )}
-                      </g>
-                    );
-                  })}
+  // Renders a single ZX diagram stage with identical viewBox & vertical geometry across all 4 stages
+  const renderDiagramPanel = (stage: StageId) => {
+    const stepY = n <= 8 ? 58 : n <= 12 ? 48 : 40;
+    const padTop = 38;
+    const padBottom = 34;
+    const width = 415;
+    const height = padTop + Math.max(0, n - 1) * stepY + padBottom;
 
-                  {/* Internal Bipartite Edges Between Diagonal 1 and Diagonal 2 */}
-                  {bipartiteEdges.map((e, idx) => {
-                    const p1 = getRPos(e.rIdx);
-                    const p2 = getCPos(e.npIdx);
-                    const isSelected =
-                      activeFaultEdge &&
-                      activeFaultEdge.rIdx === e.rIdx &&
-                      activeFaultEdge.npIdx === e.npIdx;
-                    const mx = (p1.x + p2.x) / 2;
-                    const my = (p1.y + p2.y) / 2;
+    const rowX = 88;
+    const colX = 276;
+    const wireEndX = 370;
 
-                    return (
-                      <g
-                        key={idx}
-                        onClick={() => setSelectedFaultEdgeIdx(idx)}
-                        className="cursor-pointer"
-                      >
-                        <line
-                          x1={p1.x}
-                          y1={p1.y}
-                          x2={p2.x}
-                          y2={p2.y}
-                          stroke={isSelected ? '#d97706' : '#1e293b'}
-                          strokeWidth={isSelected ? 3.5 : 2}
-                          strokeOpacity={isSelected ? 1 : 0.65}
-                        />
-                        {isSelected && (
-                          <g>
-                            <circle
-                              cx={mx}
-                              cy={my}
-                              r={10}
-                              fill={
-                                selectedFaultType === 'X'
-                                  ? '#fca5a5'
-                                  : '#86efac'
-                              }
-                              stroke={
-                                selectedFaultType === 'X'
-                                  ? '#b91c1c'
-                                  : '#15803d'
-                              }
-                              strokeWidth={2}
-                            />
-                            <text
-                              x={mx}
-                              y={my + 3.5}
-                              textAnchor="middle"
-                              className="font-mono text-[9px] font-bold fill-slate-900"
-                            >
-                              π
-                            </text>
-                          </g>
-                        )}
-                      </g>
-                    );
-                  })}
+    const yForQubit = (q: number) => padTop + q * stepY;
 
-                  {/* Diagonal 1: Row Spiders */}
-                  {Array.from({ length: numR }, (_, rIdx) => {
-                    const p = getRPos(rIdx);
-                    return (
-                      <g key={`r-${rIdx}`}>
-                        <circle
-                          cx={p.x}
-                          cy={p.y}
-                          r={12.5}
-                          fill={rowFill}
-                          stroke={rowStroke}
-                          strokeWidth={2}
-                        />
-                        <text
-                          x={p.x}
-                          y={p.y + 4}
-                          textAnchor="middle"
-                          className="font-mono text-[10px] font-bold fill-slate-900"
-                        >
-                          {rowSym}
-                          {rIdx}
-                        </text>
-                      </g>
-                    );
-                  })}
+    const isIdealized = stage === 'idealized';
+    const isNoisy = stage === 'noisy';
+    const isHookStage = stage === 'hook-splits';
+    const isCatStage = stage === 'cat-unfused';
 
-                  {/* Diagonal 2: Non-Pivot Spiders */}
-                  {nonPivots.map((colQ, npIdx) => {
-                    const p = getCPos(npIdx);
-                    return (
-                      <g key={`c-${colQ}`}>
-                        <circle
-                          cx={p.x}
-                          cy={p.y}
-                          r={12.5}
-                          fill={colFill}
-                          stroke={colStroke}
-                          strokeWidth={2}
-                        />
-                        <text
-                          x={p.x}
-                          y={p.y + 4}
-                          textAnchor="middle"
-                          className="font-mono text-[10px] font-bold fill-slate-900"
-                        >
-                          {colSym}
-                          {npIdx}
-                        </text>
-                      </g>
-                    );
-                  })}
-                </svg>
-              );
-            })()}
-          </div>
-        </div>
-      )}
+    const getChunkX = (npIdx: number, chunkIdx: number, totalChunks: number) => {
+      if (totalChunks <= 1 || (!isHookStage && !isCatStage)) return colX;
+      const spacing = isCatStage ? 44 : 40;
+      const offsetFromRight = (totalChunks - 1 - chunkIdx) * spacing;
+      return colX - offsetFromRight;
+    };
 
-      {/* Stage 2 Content: Safe Hook-Error Splits */}
-      {rewriteStage === 2 && (
-        <div className="mt-5 space-y-4">
-          <div className="rounded-xl border border-purple-200 bg-purple-50/40 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div>
-              <div className="flex flex-wrap items-center gap-2">
-                <h4 className="text-sm font-bold text-slate-900">
-                  Safe Hook-Error Spider Splitting (Section III.A.3 &amp; Appendix A)
-                </h4>
-                {validation.isPerfect && (
-                  <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-blue-100 text-blue-800 border border-blue-200 font-semibold">
-                    Perfect QECC: {colSym}-spiders unfuse at t−1 = {xT}
-                  </span>
-                )}
-              </div>
-              <p className="text-xs text-slate-600 mt-1">
-                When a single fault on an internal split edge propagates to a multi-qubit boundary error that is equivalent (up to the state&apos;s stabilizer group) to a weight-≤1 error, we can safely split a high-degree spider into a chain of smaller spiders — saving{' '}
-                <strong className="text-emerald-800">
-                  {hookAnalysis.flagsSaved} flag qubit{hookAnalysis.flagsSaved === 1 ? '' : 's'}
-                </strong>{' '}
-                ({hookAnalysis.flagsSaved * 2} CNOTs).
-              </p>
-              {validation.isPerfect && (
-                <p className="text-xs text-blue-800 bg-blue-50/90 border border-blue-200 rounded-lg px-3 py-1.5 mt-2">
-                  <strong>Perfect QECC Optimization (<code className="font-mono">is_perfect = true</code>):</strong>{' '}
-                  Only Hamming codes (e.g., Steane <code className="font-mono">[[7,1,3]]</code>, <code className="font-mono">[[15,7,3]]</code>) and the Golay code (<code className="font-mono">[[23,1,7]]</code>) are perfect QECCs. Because they saturate the sphere-packing bound, non-pivot (<KaTeXMath tex={colSym} />) spiders can be fault-equivalently unfused at distance <KaTeXMath tex={`t - 1 = ${xT}`} /> instead of <KaTeXMath tex={`t = ${t}`} />!
-                </p>
-              )}
-            </div>
+    const rowCatClusters = new Map<number, CatSubgraphData>();
+    const npChunkCatClusters = new Map<string, CatSubgraphData>();
+    const edgePortCoords = new Map<
+      string,
+      { x1: number; y1: number; x2: number; y2: number }
+    >();
+    const rowBoundaryPort = new Map<number, { x: number; y: number }>();
+    const npBoundaryPort = new Map<number, { x: number; y: number }>();
+    const splitEdgeCoords = new Map<
+      string,
+      { x1: number; y1: number; x2: number; y2: number }
+    >();
 
-            {/* Interactive Toggle for Safe Hook-Error Splits */}
-            <label className="inline-flex items-center gap-3 px-4 py-2.5 rounded-xl bg-white border border-purple-300 shadow-2xs cursor-pointer shrink-0">
-              <input
-                type="checkbox"
-                checked={analyzeHookErrors}
-                onChange={(e) => setAnalyzeHookErrors(e.target.checked)}
-                className="w-4 h-4 accent-purple-700 rounded cursor-pointer"
-              />
-              <span className="text-xs font-bold text-slate-900">
-                Enable Safe Hook-Error Splits
-              </span>
-            </label>
-          </div>
+    if (isCatStage) {
+      for (let r = 0; r < numRows; r++) {
+        const pCol = pivots[r];
+        if (pCol === undefined) continue;
+        const incEdges = bipartiteEdges.filter((e) => e.rowIdx === r);
+        const totalLegs = incEdges.length + 1;
+        const ry = yForQubit(pCol);
 
-          <div className="overflow-x-auto custom-scrollbar rounded-xl border border-slate-200">
-            <table className="w-full text-left border-collapse text-xs">
-              <thead>
-                <tr className="border-b border-slate-200 bg-slate-50 text-slate-600 font-semibold">
-                  <th className="py-2.5 px-3">Spider</th>
-                  <th className="py-2.5 px-3">Data Qubit</th>
-                  <th className="py-2.5 px-3">Dual Stabilizer Support</th>
-                  <th className="py-2.5 px-3">Unsplit Degree (Flags)</th>
-                  <th className="py-2.5 px-3">Safe Split Shape</th>
-                  <th className="py-2.5 px-3">Classification</th>
-                  <th className="py-2.5 px-3 text-right">Flags After Split</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 font-mono">
-                {hookAnalysis.colDetails.map((item) => (
-                  <tr key={item.colQubit} className="hover:bg-slate-50/80">
-                    <td className="py-2 px-3 font-bold text-slate-900">
-                      {colSym}
-                      <sub>{item.npIdx}</sub>
-                    </td>
-                    <td className="py-2 px-3 text-slate-600">
-                      q<sub>{item.colQubit}</sub>
-                    </td>
-                    <td className="py-2 px-3 text-slate-600">
-                      {'{'}
-                      {item.support.map((q) => `q_${q}`).join(', ')}
-                      {'}'}
-                    </td>
-                    <td className="py-2 px-3">
-                      deg {item.unsplitDeg}{' '}
-                      <span className="text-slate-400">
-                        ({item.unsplitFlags} flag{item.unsplitFlags === 1 ? '' : 's'})
-                      </span>
-                    </td>
-                    <td className="py-2 px-3">
-                      {item.hasSafeSplit ? (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-100 text-emerald-900 font-bold">
-                          {item.unsplitDeg} → [{item.theoShape.join(' + ')}]
-                        </span>
-                      ) : (
-                        <span className="text-slate-400">
-                          [{item.unsplitDeg}] (Unsplit)
-                        </span>
-                      )}
-                    </td>
-                    <td className="py-2 px-3 font-sans">
-                      {item.hasSafeSplit ? (
-                        item.isUniversal ? (
-                          <span className="text-emerald-700 font-semibold">
-                            Universal Safe Split (any partition)
-                          </span>
-                        ) : (
-                          <span className="text-amber-700 font-semibold">
-                            Specific Coset Safe Split
-                          </span>
-                        )
-                      ) : item.unsplitDeg < 4 ? (
-                        <span className="text-slate-400">
-                          Degree ≤ 3 (Already 3-ary)
-                        </span>
-                      ) : (
-                        <span className="text-slate-400">
-                          No weight-1 equivalent split
-                        </span>
-                      )}
-                    </td>
-                    <td className="py-2 px-3 text-right font-bold text-emerald-800">
-                      {item.splitFlags} flag{item.splitFlags === 1 ? '' : 's'}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
+        if (totalLegs <= 3) {
+          rowBoundaryPort.set(r, { x: rowX, y: ry });
+          incEdges.forEach((e) => {
+            edgePortCoords.set(e.key, {
+              x1: rowX,
+              y1: ry,
+              x2: colX,
+              y2: yForQubit(e.nonPivotCol),
+            });
+          });
+        } else {
+          const otherTargets = incEdges.map((e) => ({
+            x: colX,
+            y: yForQubit(e.nonPivotCol),
+          }));
+          const catLayout = buildSpiderCatLayout(
+            totalLegs,
+            t,
+            rowX,
+            ry,
+            true,
+            true,
+            otherTargets
+          );
+          rowCatClusters.set(r, {
+            nodes: catLayout.nodes,
+            internalEdges: catLayout.internalEdges,
+            portNodeIds: [
+              ...(catLayout.outputPortId !== null
+                ? [catLayout.outputPortId]
+                : []),
+              ...catLayout.otherLegPortIds,
+            ],
+          });
 
-      {/* Stage 3 Content: Well-Ordered Cat State Unfusion */}
-      {rewriteStage === 3 && (
-        <div className="mt-5 grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
-          <div className="lg:col-span-5 space-y-3">
-            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-              <h4 className="text-xs font-bold uppercase tracking-wider text-slate-800 mb-2">
-                Select Spider to Inspect Unfused Well-Ordered Cat State
-              </h4>
-              <div className="space-y-2">
-                <div className="text-[11px] font-semibold text-slate-500">
-                  Row Spiders ({rowSym}-type):
-                </div>
-                <div className="flex flex-wrap gap-1.5">
-                  {Array.from({ length: matrix.length }, (_, rIdx) => {
-                    const deg = cost.rowWeights[rIdx] ?? 1;
-                    const isSel =
-                      selectedCatSpider.side === 'row' &&
-                      selectedCatSpider.index === rIdx;
-                    return (
-                      <button
-                        key={`r-${rIdx}`}
-                        type="button"
-                        onClick={() =>
-                          setSelectedCatSpider({ side: 'row', index: rIdx })
-                        }
-                        className={`px-2.5 py-1 rounded-lg font-mono text-xs font-semibold border transition-all cursor-pointer ${
-                          isSel
-                            ? 'bg-emerald-700 text-white border-emerald-700'
-                            : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
-                        }`}
-                      >
-                        {rowSym}
-                        <sub>{rIdx}</sub> (deg={deg})
-                      </button>
-                    );
-                  })}
-                </div>
+          const outNode =
+            catLayout.outputPortId !== null
+              ? catLayout.nodes.get(catLayout.outputPortId)
+              : undefined;
+          rowBoundaryPort.set(
+            r,
+            outNode ? { x: outNode.x, y: outNode.y } : { x: rowX, y: ry }
+          );
 
-                <div className="text-[11px] font-semibold text-slate-500 pt-2">
-                  Non-Pivot Column Spiders ({colSym}-type):
-                </div>
-                <div className="flex flex-wrap gap-1.5">
-                  {nonPivots.map((colQ, npIdx) => {
-                    const deg = (cost.colWeights[colQ] ?? 0) + 1;
-                    const isSel =
-                      selectedCatSpider.side === 'col' &&
-                      selectedCatSpider.index === npIdx;
-                    return (
-                      <button
-                        key={`c-${colQ}`}
-                        type="button"
-                        onClick={() =>
-                          setSelectedCatSpider({ side: 'col', index: npIdx })
-                        }
-                        className={`px-2.5 py-1 rounded-lg font-mono text-xs font-semibold border transition-all cursor-pointer ${
-                          isSel
-                            ? 'bg-rose-700 text-white border-rose-700'
-                            : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
-                        }`}
-                      >
-                        {colSym}
-                        <sub>{npIdx}</sub> (deg={deg})
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            </div>
+          incEdges.forEach((e, idx) => {
+            const pId = catLayout.otherLegPortIds[idx];
+            const pNode =
+              pId !== undefined ? catLayout.nodes.get(pId) : undefined;
+            edgePortCoords.set(e.key, {
+              x1: pNode ? pNode.x : rowX,
+              y1: pNode ? pNode.y : ry,
+              x2: colX,
+              y2: yForQubit(e.nonPivotCol),
+            });
+          });
+        }
+      }
 
-            <div className="rounded-xl border border-emerald-200 bg-emerald-50/50 p-4 text-xs text-slate-700 space-y-2">
-              <div className="font-bold text-emerald-950 flex items-center gap-1.5">
-                <Info className="w-4 h-4 text-emerald-700" />
-                Why Well-Ordered Cat States? (Definition III.6)
-              </div>
-              <p className="leading-relaxed">
-                By unfusing each degree-<KaTeXMath tex="w" /> spider into a precomputed{' '}
-                <strong>Well-Ordered Cat State</strong>{' '}
-                <KaTeXMath tex="\text{Cat}_w^t = (G, F, D)" />, every non-primary leg satisfies either the{' '}
-                <strong>Direct CNOT Condition</strong> (Lemma III.7) or the{' '}
-                <strong>Flag-Delegation Condition</strong> (Lemma III.8), allowing every bipartite connection to be extracted as a single CNOT gate without Bell measurements!
-              </p>
-              <button
-                type="button"
-                onClick={() => setPostPhase2Branch('pipeline')}
-                className="w-full mt-2 inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-700 text-white font-semibold hover:bg-emerald-800 transition-colors cursor-pointer"
-              >
-                Proceed to Algorithm 1 Pipeline (Phase 3) <ArrowRight className="w-4 h-4" />
-              </button>
-            </div>
-          </div>
+      npChunkGroups.forEach((grp) => {
+        const ny = yForQubit(grp.npCol);
+        const numChunks = isCatStage && useHookSplits ? grp.rowChunks.length : 1;
+        const activeRowChunks =
+          numChunks > 1
+            ? grp.rowChunks
+            : [grp.rowChunks.flat()];
 
-          {/* Right Panel: Visualization of the selected Well-Ordered Cat State (G, F, roots, mainNode) */}
-          <div className="lg:col-span-7 rounded-xl border border-slate-200 bg-white p-4">
-            <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
-              <div>
-                <h4 className="text-xs font-bold uppercase tracking-wider text-slate-800">
-                  Expanded 3-Ary SpiderCat Subgraph: {inspectedCatState.label}
-                </h4>
-                <p className="text-[11px] text-slate-500 mt-0.5 font-mono">
-                  Nodes: {inspectedCatState.cat.G.nodes.size} • Spanning Tree F edges:{' '}
-                  {getUndirectedEdges(inspectedCatState.cat.F).length} • Flag closure edges:{' '}
-                  {getUndirectedEdges(inspectedCatState.cat.G).length -
-                    getUndirectedEdges(inspectedCatState.cat.F).length}{' '}
-                  • Root r₀ = {inspectedCatState.cat.roots[0]} • Primary Exit ={' '}
-                  {inspectedCatState.cat.edge}
-                </p>
-              </div>
-            </div>
+        const chunkRightSplitPort: Array<{ x: number; y: number }> = [];
+        const chunkLeftSplitPort: Array<{ x: number; y: number }> = [];
 
-            {(() => {
-              const { cat, spiderBasis } = inspectedCatState;
-              const nodes = Array.from(cat.G.nodes.values());
-              const edges = getUndirectedEdges(cat.G);
-              const rootId = cat.roots[0];
-              const exitId = cat.edge;
+        activeRowChunks.forEach((rList, cIdx) => {
+          const cx = getChunkX(grp.npIdx, cIdx, numChunks);
+          const hasLeftSplit = cIdx > 0;
+          const hasRightSplit = cIdx < numChunks - 1;
+          const hasOutWire = cIdx === numChunks - 1;
+          const totalChunkLegs =
+            rList.length +
+            (hasLeftSplit ? 1 : 0) +
+            (hasRightSplit ? 1 : 0) +
+            (hasOutWire ? 1 : 0);
 
-              const sFill = spiderBasis === 'Z' ? '#86efac' : '#fca5a5';
-              const sStroke = spiderBasis === 'Z' ? '#15803d' : '#b91c1c';
-
-              // Place nodes on a clean circular / layered layout around center
-              const cx = 260;
-              const cy = 145;
-              const radius = nodes.length <= 4 ? 70 : 95;
-              const posMap = new Map<number, { x: number; y: number }>();
-              nodes.forEach((n, idx) => {
-                const angle =
-                  -Math.PI / 2 + (2 * Math.PI * idx) / Math.max(1, nodes.length);
-                posMap.set(n.id, {
-                  x: cx + radius * Math.cos(angle),
-                  y: cy + radius * Math.sin(angle),
+          if (totalChunkLegs <= 3) {
+            chunkLeftSplitPort[cIdx] = { x: cx, y: ny };
+            chunkRightSplitPort[cIdx] = { x: cx, y: ny };
+            if (hasOutWire) {
+              npBoundaryPort.set(grp.npIdx, { x: cx, y: ny });
+            }
+            rList.forEach((r) => {
+              const key = `r${r}-np${grp.npIdx}`;
+              const prev = edgePortCoords.get(key);
+              if (prev) {
+                edgePortCoords.set(key, {
+                  ...prev,
+                  x2: cx,
+                  y2: ny,
                 });
+              }
+            });
+          } else {
+            const otherTargets: Array<{ x: number; y: number }> = rList.map(
+              (r) => ({
+                x: rowX,
+                y: yForQubit(pivots[r] ?? 0),
+              })
+            );
+            if (hasLeftSplit) {
+              otherTargets.push({
+                x: getChunkX(grp.npIdx, cIdx - 1, numChunks),
+                y: ny,
               });
+            }
 
-              return (
-                <svg
-                  viewBox="0 0 520 290"
-                  className="w-full h-auto bg-slate-50/70 rounded-lg border border-slate-100 select-none"
+            const catLayout = buildSpiderCatLayout(
+              totalChunkLegs,
+              t,
+              cx,
+              ny,
+              false,
+              true,
+              otherTargets
+            );
+
+            npChunkCatClusters.set(`${grp.npIdx}-${cIdx}`, {
+              nodes: catLayout.nodes,
+              internalEdges: catLayout.internalEdges,
+              portNodeIds: [
+                ...(catLayout.outputPortId !== null
+                  ? [catLayout.outputPortId]
+                  : []),
+                ...catLayout.otherLegPortIds,
+              ],
+            });
+
+            const rightHorizNode =
+              catLayout.outputPortId !== null
+                ? catLayout.nodes.get(catLayout.outputPortId)
+                : undefined;
+            const rightPt = rightHorizNode
+              ? { x: rightHorizNode.x, y: rightHorizNode.y }
+              : { x: cx, y: ny };
+
+            chunkRightSplitPort[cIdx] = rightPt;
+            if (hasOutWire) {
+              npBoundaryPort.set(grp.npIdx, rightPt);
+            }
+
+            rList.forEach((r, idx) => {
+              const pId = catLayout.otherLegPortIds[idx];
+              const pNode =
+                pId !== undefined ? catLayout.nodes.get(pId) : undefined;
+              const key = `r${r}-np${grp.npIdx}`;
+              const prev = edgePortCoords.get(key);
+              if (prev) {
+                edgePortCoords.set(key, {
+                  ...prev,
+                  x2: pNode ? pNode.x : cx,
+                  y2: pNode ? pNode.y : ny,
+                });
+              }
+            });
+
+            if (hasLeftSplit) {
+              const leftPortId =
+                catLayout.otherLegPortIds[otherTargets.length - 1];
+              const leftNode =
+                leftPortId !== undefined
+                  ? catLayout.nodes.get(leftPortId)
+                  : undefined;
+              chunkLeftSplitPort[cIdx] = leftNode
+                ? { x: leftNode.x, y: leftNode.y }
+                : { x: cx, y: ny };
+            } else {
+              chunkLeftSplitPort[cIdx] = { x: cx, y: ny };
+            }
+          }
+        });
+
+        for (let cIdx = 0; cIdx < numChunks - 1; cIdx++) {
+          const pLeft = chunkRightSplitPort[cIdx];
+          const pRight = chunkLeftSplitPort[cIdx + 1];
+          if (pLeft && pRight) {
+            splitEdgeCoords.set(`${grp.npIdx}-${cIdx}`, {
+              x1: pLeft.x,
+              y1: pLeft.y,
+              x2: pRight.x,
+              y2: pRight.y,
+            });
+          }
+        }
+      });
+    }
+
+    const rMain = n <= 8 ? 8.5 : 7.5;
+    const rCat = 5.2;
+
+    return (
+      <div className="flex flex-col items-center flex-1 min-w-[290px]">
+        <span className="text-xs sm:text-sm font-semibold text-slate-700 mb-2 text-center">
+          {stage === 'idealized' && 'Idealized bipartite diagram'}
+          {stage === 'noisy' && 'Replace idealized edges with noisy edges'}
+          {stage === 'hook-splits' && 'Unfuse along safe hook errors'}
+          {stage === 'cat-unfused' &&
+            'Fault-equivalently unfuse high-degree spiders'}
+        </span>
+
+        <svg
+          viewBox={`0 0 ${width} ${height}`}
+          className="w-full h-auto max-h-[580px] select-none overflow-visible"
+        >
+          {/* 1. Horizontal Output Wires (one per physical qubit q_0..q_{n-1}) */}
+          {Array.from({ length: numRows }, (_, r) => {
+            const pCol = pivots[r];
+            if (pCol === undefined) return null;
+            const y = yForQubit(pCol);
+            const startPt = isCatStage
+              ? (rowBoundaryPort.get(r) ?? { x: rowX, y })
+              : { x: rowX, y };
+
+            const hasUnidealizedFault =
+              isNoisy && unidealizedPropagatedQubit === pCol;
+            const hasHookSingleFault =
+              isHookStage && hookPropagationPath.equivalentWire === pCol;
+            const isHighlightedWire = hasUnidealizedFault || hasHookSingleFault;
+
+            const wireStrokeColor = hasUnidealizedFault
+              ? faultStroke
+              : hookFaultStroke;
+            const badgeFillColor = hasUnidealizedFault
+              ? faultFill
+              : hookFaultFill;
+
+            const faultX = wireEndX - 22;
+
+            return (
+              <g key={`out-row-${r}`}>
+                <line
+                  x1={startPt.x}
+                  y1={startPt.y}
+                  x2={wireEndX}
+                  y2={y}
+                  stroke="#334155"
+                  strokeWidth={1.75}
+                />
+                {isHighlightedWire && (
+                  <line
+                    x1={startPt.x}
+                    y1={startPt.y}
+                    x2={faultX}
+                    y2={y}
+                    stroke={wireStrokeColor}
+                    strokeWidth={3}
+                  />
+                )}
+                <text
+                  x={wireEndX + 8}
+                  y={y + 4}
+                  fontSize={10.5}
+                  className={`font-mono ${
+                    isHighlightedWire
+                      ? 'fill-slate-900 font-bold'
+                      : 'fill-slate-500 font-medium'
+                  }`}
                 >
-                  {/* Edges of G: bold black for spanning tree F, orange/amber for non-tree flag edges */}
-                  {edges.map((e, idx) => {
-                    const p1 = posMap.get(e.source);
-                    const p2 = posMap.get(e.target);
-                    if (!p1 || !p2) return null;
-                    const inForest = hasUndirectedEdge(
-                      cat.F,
-                      e.source,
-                      e.target
-                    );
+                  q_{pCol}
+                </text>
+                {isHighlightedWire && (
+                  <g>
+                    <circle
+                      cx={faultX}
+                      cy={startPt.y}
+                      r={7.8}
+                      fill={badgeFillColor}
+                      stroke={wireStrokeColor}
+                      strokeWidth={1.8}
+                    />
+                    <text
+                      x={faultX}
+                      y={startPt.y + 3.2}
+                      textAnchor="middle"
+                      fontSize={9}
+                      className="font-mono font-bold fill-slate-900 pointer-events-none"
+                    >
+                      π
+                    </text>
+                  </g>
+                )}
+              </g>
+            );
+          })}
+
+          {nonPivots.map((npCol, npIdx) => {
+            const y = yForQubit(npCol);
+            const startPt = isCatStage
+              ? (npBoundaryPort.get(npIdx) ?? { x: colX, y })
+              : { x: colX, y };
+
+            const hasUnidealizedFault =
+              isNoisy && unidealizedPropagatedQubit === npCol;
+            const hasHookSingleFault =
+              isHookStage && hookPropagationPath.equivalentWire === npCol;
+            const isHighlightedWire = hasUnidealizedFault || hasHookSingleFault;
+
+            const wireStrokeColor = hasUnidealizedFault
+              ? faultStroke
+              : hookFaultStroke;
+            const badgeFillColor = hasUnidealizedFault
+              ? faultFill
+              : hookFaultFill;
+
+            const faultX = wireEndX - 22;
+
+            return (
+              <g key={`out-np-${npIdx}`}>
+                <line
+                  x1={startPt.x}
+                  y1={startPt.y}
+                  x2={wireEndX}
+                  y2={y}
+                  stroke="#334155"
+                  strokeWidth={1.75}
+                />
+                {isHighlightedWire && (
+                  <line
+                    x1={startPt.x}
+                    y1={startPt.y}
+                    x2={faultX}
+                    y2={y}
+                    stroke={wireStrokeColor}
+                    strokeWidth={3}
+                  />
+                )}
+                <text
+                  x={wireEndX + 8}
+                  y={y + 4}
+                  fontSize={10.5}
+                  className={`font-mono ${
+                    isHighlightedWire
+                      ? 'fill-slate-900 font-bold'
+                      : 'fill-slate-500 font-medium'
+                  }`}
+                >
+                  q_{npCol}
+                </text>
+                {isHighlightedWire && (
+                  <g>
+                    <circle
+                      cx={faultX}
+                      cy={startPt.y}
+                      r={7.8}
+                      fill={badgeFillColor}
+                      stroke={wireStrokeColor}
+                      strokeWidth={1.8}
+                    />
+                    <text
+                      x={faultX}
+                      y={startPt.y + 3.2}
+                      textAnchor="middle"
+                      fontSize={9}
+                      className="font-mono font-bold fill-slate-900 pointer-events-none"
+                    >
+                      π
+                    </text>
+                  </g>
+                )}
+              </g>
+            );
+          })}
+
+          {/* 2. Internal Bipartite Edges */}
+          {bipartiteEdges.map((e) => {
+            const ry = yForQubit(e.pivotCol);
+            const ny = yForQubit(e.nonPivotCol);
+
+            let x1 = rowX;
+            let y1 = ry;
+            let x2 = colX;
+            let y2 = ny;
+
+            if (isHookStage) {
+              const grp = npChunkGroups[e.npIdx];
+              if (grp && grp.rowChunks.length > 1) {
+                const cIdx = grp.rowChunks.findIndex((rList) =>
+                  rList.includes(e.rowIdx)
+                );
+                if (cIdx >= 0) {
+                  x2 = getChunkX(e.npIdx, cIdx, grp.rowChunks.length);
+                }
+              }
+            } else if (isCatStage) {
+              const coords = edgePortCoords.get(e.key);
+              if (coords) {
+                x1 = coords.x1;
+                y1 = coords.y1;
+                x2 = coords.x2;
+                y2 = coords.y2;
+              }
+            }
+
+            const isActiveUnidealized =
+              isNoisy && activeEdge?.key === e.key;
+            const isHookPath =
+              isHookStage && hookPropagationPath.activeEdgeKeys.has(e.key);
+
+            const mx = (x1 + x2) / 2;
+            const my = (y1 + y2) / 2;
+
+            const goesToRowSpider = faultBasis === rowSym;
+            const targetX = goesToRowSpider ? x1 : x2;
+            const targetY = goesToRowSpider ? y1 : y2;
+
+            return (
+              <g
+                key={`${stage}-${e.key}`}
+                onClick={
+                  isNoisy
+                    ? () =>
+                        setSelectedEdgeKey((prev) =>
+                          prev === e.key ? null : e.key
+                        )
+                    : undefined
+                }
+                className={isNoisy ? 'cursor-pointer group' : ''}
+              >
+                {isNoisy && (
+                  <line
+                    x1={x1}
+                    y1={y1}
+                    x2={x2}
+                    y2={y2}
+                    stroke="transparent"
+                    strokeWidth={12}
+                  />
+                )}
+                {/* Base edge */}
+                <line
+                  x1={x1}
+                  y1={y1}
+                  x2={x2}
+                  y2={y2}
+                  stroke={
+                    isHookPath
+                      ? hookFaultStroke
+                      : isIdealized
+                      ? '#9333ea'
+                      : isActiveUnidealized
+                      ? '#64748b'
+                      : '#334155'
+                  }
+                  strokeWidth={isHookPath ? 2.8 : 1.75}
+                  className={
+                    isNoisy ? 'group-hover:stroke-amber-600 transition-colors' : ''
+                  }
+                />
+                {/* Solid colored half-edge starting from the error (mx, my) to the target spider */}
+                {isActiveUnidealized && (
+                  <>
+                    <line
+                      x1={mx}
+                      y1={my}
+                      x2={targetX}
+                      y2={targetY}
+                      stroke={faultStroke}
+                      strokeWidth={3}
+                    />
+                    <g>
+                      <circle
+                        cx={mx}
+                        cy={my}
+                        r={7.5}
+                        fill={faultFill}
+                        stroke={faultStroke}
+                        strokeWidth={1.8}
+                      />
+                      <text
+                        x={mx}
+                        y={my + 3.2}
+                        textAnchor="middle"
+                        fontSize={9}
+                        className="font-mono font-bold fill-slate-900 pointer-events-none"
+                      >
+                        π
+                      </text>
+                    </g>
+                  </>
+                )}
+              </g>
+            );
+          })}
+
+          {/* 3. Safe Hook-Error Split Edges (in 'hook-splits' and 'cat-unfused' stages) */}
+          {(isHookStage || (isCatStage && useHookSplits)) &&
+            npChunkGroups.map((grp) => {
+              const numChunks = grp.rowChunks.length;
+              if (numChunks <= 1) return null;
+              const ny = yForQubit(grp.npCol);
+
+              return Array.from({ length: numChunks - 1 }, (_, cIdx) => {
+                const splitKey = `${grp.npIdx}-${cIdx}`;
+                const isActiveSplit =
+                  isHookStage &&
+                  activeHookSplit?.npIdx === grp.npIdx &&
+                  activeHookSplit?.chunkIdx === cIdx;
+
+                let x1 = getChunkX(grp.npIdx, cIdx, numChunks);
+                let y1 = ny;
+                let x2 = getChunkX(grp.npIdx, cIdx + 1, numChunks);
+                let y2 = ny;
+
+                if (isCatStage) {
+                  const sc = splitEdgeCoords.get(splitKey);
+                  if (sc) {
+                    x1 = sc.x1;
+                    y1 = sc.y1;
+                    x2 = sc.x2;
+                    y2 = sc.y2;
+                  }
+                }
+
+                const mx = (x1 + x2) / 2;
+                const my = (y1 + y2) / 2;
+
+                return (
+                  <g
+                    key={`split-${stage}-${splitKey}`}
+                    onClick={
+                      isHookStage
+                        ? () =>
+                            setSelectedHookKey((prev) =>
+                              prev === splitKey ? null : splitKey
+                            )
+                        : undefined
+                    }
+                    className={isHookStage ? 'cursor-pointer group' : ''}
+                  >
+                    <line
+                      x1={x1}
+                      y1={y1}
+                      x2={x2}
+                      y2={y2}
+                      stroke="transparent"
+                      strokeWidth={14}
+                    />
+                    <line
+                      x1={x1}
+                      y1={y1}
+                      x2={x2}
+                      y2={y2}
+                      stroke={isActiveSplit ? '#64748b' : '#334155'}
+                      strokeWidth={2}
+                      className={
+                        isHookStage
+                          ? 'group-hover:stroke-amber-600 transition-colors'
+                          : ''
+                      }
+                    />
+                    {/* Solid colored half-edge starting from the split-edge error (mx, my) to left chunk (x1, y1) */}
+                    {isActiveSplit && (
+                      <>
+                        <line
+                          x1={mx}
+                          y1={my}
+                          x2={x1}
+                          y2={y1}
+                          stroke={hookFaultStroke}
+                          strokeWidth={3}
+                        />
+                        <g>
+                          <circle
+                            cx={mx}
+                            cy={my}
+                            r={7.5}
+                            fill={hookFaultFill}
+                            stroke={hookFaultStroke}
+                            strokeWidth={1.8}
+                          />
+                          <text
+                            x={mx}
+                            y={my + 3.2}
+                            textAnchor="middle"
+                            fontSize={9}
+                            className="font-mono font-bold fill-slate-900 pointer-events-none"
+                          >
+                            π
+                          </text>
+                        </g>
+                      </>
+                    )}
+                  </g>
+                );
+              });
+            })}
+
+          {/* 4. Spiders / Unfused SpiderCat Subgraphs */}
+          {!isCatStage ? (
+            <>
+              {/* Row Spiders */}
+              {Array.from({ length: numRows }, (_, r) => {
+                const pCol = pivots[r];
+                if (pCol === undefined) return null;
+                const y = yForQubit(pCol);
+
+                return (
+                  <circle
+                    key={`row-node-${r}`}
+                    cx={rowX}
+                    cy={y}
+                    r={rMain}
+                    fill={rowFill}
+                    stroke={rowStroke}
+                    strokeWidth={1.8}
+                  />
+                );
+              })}
+
+              {/* Non-Pivot Column Spiders (or split chunks in stage 3) */}
+              {npChunkGroups.map((grp) => {
+                const y = yForQubit(grp.npCol);
+                const numChunks = isHookStage ? grp.rowChunks.length : 1;
+
+                return Array.from({ length: numChunks }, (_, cIdx) => {
+                  const cx = getChunkX(grp.npIdx, cIdx, numChunks);
+                  return (
+                    <circle
+                      key={`np-node-${grp.npIdx}-${cIdx}`}
+                      cx={cx}
+                      cy={y}
+                      r={rMain}
+                      fill={colFill}
+                      stroke={colStroke}
+                      strokeWidth={1.8}
+                    />
+                  );
+                });
+              })}
+            </>
+          ) : (
+            <>
+              {/* Stage 4: Row spiders (single node if deg <= 3, SpiderCat subgraph if deg >= 4) */}
+              {Array.from({ length: numRows }, (_, r) => {
+                const pCol = pivots[r];
+                if (pCol === undefined) return null;
+                const cluster = rowCatClusters.get(r);
+                if (!cluster) {
+                  const y = yForQubit(pCol);
+                  return (
+                    <circle
+                      key={`cat-row-single-${r}`}
+                      cx={rowX}
+                      cy={y}
+                      r={rMain}
+                      fill={rowFill}
+                      stroke={rowStroke}
+                      strokeWidth={1.8}
+                    />
+                  );
+                }
+                return (
+                  <g key={`cat-row-${r}`}>
+                    {cluster.internalEdges.map((ie, idx) => {
+                      const u = cluster.nodes.get(ie.u);
+                      const v = cluster.nodes.get(ie.v);
+                      if (!u || !v) return null;
+                      return (
+                        <line
+                          key={`ie-r-${r}-${idx}`}
+                          x1={u.x}
+                          y1={u.y}
+                          x2={v.x}
+                          y2={v.y}
+                          stroke="#334155"
+                          strokeWidth={1.6}
+                        />
+                      );
+                    })}
+                    {Array.from(cluster.nodes.values()).map((nNode) => (
+                      <circle
+                        key={`cn-r-${r}-${nNode.localId}`}
+                        cx={nNode.x}
+                        cy={nNode.y}
+                        r={rCat}
+                        fill={rowFill}
+                        stroke={rowStroke}
+                        strokeWidth={1.45}
+                      />
+                    ))}
+                  </g>
+                );
+              })}
+
+              {/* Stage 4: Non-pivot spiders/chunks (single node if deg <= 3, SpiderCat subgraph if deg >= 4) */}
+              {npChunkGroups.map((grp) => {
+                const y = yForQubit(grp.npCol);
+                const numChunks = useHookSplits ? grp.rowChunks.length : 1;
+
+                return Array.from({ length: numChunks }, (_, cIdx) => {
+                  const key = `${grp.npIdx}-${cIdx}`;
+                  const cluster = npChunkCatClusters.get(key);
+                  if (!cluster) {
+                    const cx = getChunkX(grp.npIdx, cIdx, numChunks);
                     return (
-                      <line
-                        key={idx}
-                        x1={p1.x}
-                        y1={p1.y}
-                        x2={p2.x}
-                        y2={p2.y}
-                        stroke={inForest ? '#0f172a' : '#ea580c'}
-                        strokeWidth={inForest ? 3.2 : 2.2}
-                        strokeDasharray={inForest ? undefined : '5,4'}
+                      <circle
+                        key={`cat-np-single-${key}`}
+                        cx={cx}
+                        cy={y}
+                        r={rMain}
+                        fill={colFill}
+                        stroke={colStroke}
+                        strokeWidth={1.8}
                       />
                     );
-                  })}
-
-                  {/* Nodes */}
-                  {nodes.map((n) => {
-                    const p = posMap.get(n.id)!;
-                    const isRoot = n.id === rootId;
-                    const isExit = n.id === exitId;
-                    return (
-                      <g key={n.id}>
-                        {/* Root blue square outline matching paper TikZ root_highlight */}
-                        {isRoot && (
-                          <rect
-                            x={p.x - 19}
-                            y={p.y - 19}
-                            width={38}
-                            height={38}
-                            rx={6}
-                            fill="none"
-                            stroke="#2563eb"
-                            strokeWidth={2.2}
+                  }
+                  return (
+                    <g key={`cat-np-${key}`}>
+                      {cluster.internalEdges.map((ie, idx) => {
+                        const u = cluster.nodes.get(ie.u);
+                        const v = cluster.nodes.get(ie.v);
+                        if (!u || !v) return null;
+                        return (
+                          <line
+                            key={`ie-np-${key}-${idx}`}
+                            x1={u.x}
+                            y1={u.y}
+                            x2={v.x}
+                            y2={v.y}
+                            stroke="#334155"
+                            strokeWidth={1.6}
                           />
-                        )}
+                        );
+                      })}
+                      {Array.from(cluster.nodes.values()).map((nNode) => (
                         <circle
-                          cx={p.x}
-                          cy={p.y}
-                          r={14}
-                          fill={sFill}
-                          stroke={sStroke}
-                          strokeWidth={2}
+                          key={`cn-np-${key}-${nNode.localId}`}
+                          cx={nNode.x}
+                          cy={nNode.y}
+                          r={rCat}
+                          fill={colFill}
+                          stroke={colStroke}
+                          strokeWidth={1.45}
                         />
-                        <text
-                          x={p.x}
-                          y={p.y + 4}
-                          textAnchor="middle"
-                          className="font-mono text-[11px] font-bold fill-slate-900"
-                        >
-                          {n.id}
-                        </text>
-                        {n.is_mark && (
-                          <text
-                            x={p.x}
-                            y={p.y - 21}
-                            textAnchor="middle"
-                            className="font-mono text-[9.5px] font-semibold fill-slate-600"
-                          >
-                            {isExit ? '★ Primary Leg' : 'Port Leg'}
-                          </text>
-                        )}
-                      </g>
-                    );
-                  })}
-                </svg>
-              );
-            })()}
+                      ))}
+                    </g>
+                  );
+                });
+              })}
+            </>
+          )}
+        </svg>
+      </div>
+    );
+  };
 
-            <div className="mt-2.5 flex flex-wrap items-center gap-4 text-[11px] text-slate-600 font-mono">
-              <span className="inline-flex items-center gap-1.5">
-                <span className="w-4 h-1 bg-slate-900 inline-block"></span>
-                Spanning Forest F
-              </span>
-              <span className="inline-flex items-center gap-1.5">
-                <span className="w-4 h-0.5 border-t-2 border-dashed border-orange-600 inline-block"></span>
-                Non-Tree Flag Edge
-              </span>
-              <span className="inline-flex items-center gap-1.5">
-                <span className="w-3.5 h-3.5 rounded-xs border-2 border-blue-600 inline-block"></span>
-                Root Spider r₀
-              </span>
+  return (
+    <div className="space-y-4">
+      <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-2xs">
+        {/* Header with Right-Aligned 2-Line Controls */}
+        <div className="flex flex-wrap items-start justify-between gap-4 border-b border-slate-100 pb-4 mb-4">
+          <div>
+            <div className="inline-flex items-center gap-1.5 text-xs font-mono uppercase tracking-wider text-purple-700 font-semibold mb-1">
+              <GitBranch className="w-3.5 h-3.5" />
+              <span>Phase 2B • Fault-Equivalent ZX-Rewrites</span>
             </div>
+            <h3 className="text-base sm:text-lg font-bold text-slate-900">
+              Fault-Equivalent ZX-Rewrites ([[{n}, {validation.k}, {d}]])
+            </h3>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Click any internal edge in the noisy diagram or any split edge in the safe hook-error diagram to see fault propagation.
+            </p>
+          </div>
+
+          {/* Right-aligned two-line Fault & Safe Hook Splits controls */}
+          <div className="flex flex-col items-end gap-2 ml-auto">
+            <div className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 p-1 text-xs">
+              <span className="px-2 text-slate-500 font-mono text-[11px]">
+                Fault:
+              </span>
+              <button
+                type="button"
+                onClick={() => setFaultBasis('X')}
+                className={`px-2.5 py-1 rounded-md font-mono font-semibold transition-all cursor-pointer ${
+                  faultBasis === 'X'
+                    ? 'bg-rose-600 text-white shadow-2xs'
+                    : 'text-slate-600 hover:bg-white'
+                }`}
+              >
+                X(π)
+              </button>
+              <button
+                type="button"
+                onClick={() => setFaultBasis('Z')}
+                className={`px-2.5 py-1 rounded-md font-mono font-semibold transition-all cursor-pointer ${
+                  faultBasis === 'Z'
+                    ? 'bg-emerald-700 text-white shadow-2xs'
+                    : 'text-slate-600 hover:bg-white'
+                }`}
+              >
+                Z(π)
+              </button>
+            </div>
+
+            {d === 3 && (
+              <label className="inline-flex items-center gap-2 px-2.5 py-1 rounded-lg border border-slate-200 bg-slate-50 text-xs font-medium text-slate-700 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={useHookSplits}
+                  onChange={(e) => setAnalyzeHookErrors(e.target.checked)}
+                  className="rounded border-slate-300 text-purple-600 focus:ring-purple-500"
+                />
+                <span>Safe Hook Splits ({safeSplits.length})</span>
+              </label>
+            )}
           </div>
         </div>
-      )}
+
+        {/* Stepper Navigation Bar with Tactile Pushable Buttons & Animated Title */}
+        <div className="flex items-center justify-between gap-3 px-3.5 py-2.5 mb-4 rounded-xl bg-slate-50 border border-slate-200/90">
+          <button
+            type="button"
+            disabled={safeRewriteStep === 0}
+            onClick={() =>
+              setRewriteStep(Math.max(0, safeRewriteStep - 1))
+            }
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-700 active:translate-y-0.5 text-white border-b-2 border-purple-800 shadow-sm hover:shadow disabled:bg-slate-200 disabled:text-slate-400 disabled:border-slate-300 disabled:shadow-none disabled:pointer-events-none text-xs sm:text-sm font-bold transition-all cursor-pointer"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            <span>Prev Rewrite</span>
+          </button>
+
+          <div
+            key={`${safeRewriteStep}-${activeRewriteSteps.length}`}
+            className="flex items-center gap-2.5 text-center animate-fade-in"
+          >
+            <span className="px-2.5 py-0.5 rounded-md bg-purple-100 text-purple-900 font-mono text-xs font-bold border border-purple-200">
+              Step {safeRewriteStep + 1} / {activeRewriteSteps.length}
+            </span>
+            <span className="text-xs sm:text-sm font-semibold text-slate-800 flex items-center gap-2">
+              <span>{currentStepSpec.leftTitle}</span>
+              <MathTex
+                tex={
+                  currentStepSpec.eqSub
+                    ? `\\underset{\\text{${currentStepSpec.eqSub}}}{\\mathrel{\\widehat{=}}}`
+                    : '\\mathrel{\\widehat{=}}'
+                }
+                className="text-base text-slate-700"
+              />
+              <span>{currentStepSpec.rightTitle}</span>
+            </span>
+          </div>
+
+          <button
+            type="button"
+            disabled={safeRewriteStep >= activeRewriteSteps.length - 1}
+            onClick={() =>
+              setRewriteStep(
+                Math.min(activeRewriteSteps.length - 1, safeRewriteStep + 1)
+              )
+            }
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-700 active:translate-y-0.5 text-white border-b-2 border-purple-800 shadow-sm hover:shadow disabled:bg-slate-200 disabled:text-slate-400 disabled:border-slate-300 disabled:shadow-none disabled:pointer-events-none text-xs sm:text-sm font-bold transition-all cursor-pointer"
+          >
+            <span>Next Rewrite</span>
+            <ArrowRight className="w-4 h-4" />
+          </button>
+        </div>
+
+        {/* Two Side-by-Side ZX Diagrams with KaTeX \FaultEq Between Them */}
+        <div
+          key={`pair-${safeRewriteStep}-${activeRewriteSteps.length}`}
+          className="flex flex-col md:flex-row items-center justify-center gap-4 py-2 transition-all duration-300"
+        >
+          {renderDiagramPanel(currentStepSpec.leftStage)}
+          <FaultEqSymbol
+            sub={currentStepSpec.eqSub}
+            className="my-2 md:my-0 shrink-0 px-2"
+          />
+          {renderDiagramPanel(currentStepSpec.rightStage)}
+        </div>
+
+        {/* Bottom Right-Aligned "Show Pipeline" Action Button */}
+        <div className="mt-6 pt-4 border-t border-slate-100 flex justify-end">
+          <button
+            type="button"
+            onClick={() => setPostPhase2Branch('pipeline')}
+            className="inline-flex items-center gap-2 px-6 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:translate-y-0.5 border-b-2 border-emerald-800 text-white text-sm font-bold shadow-sm hover:shadow transition-all cursor-pointer"
+          >
+            <span>Show Pipeline</span>
+            <ArrowRight className="w-4 h-4" />
+          </button>
+        </div>
+      </div>
     </div>
   );
 };
