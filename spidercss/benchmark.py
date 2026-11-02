@@ -20,8 +20,6 @@ import pandas as pd
 from tqdm import tqdm
 from concurrent.futures import ProcessPoolExecutor, as_completed
 
-from spidercss.resource_scheduling import plan_resource_aware_reuse
-from spidercss.resource_targets import ReuseTarget
 from spidercss.utils import (
     get_project_root,
     load_qecc,
@@ -33,7 +31,6 @@ from spidercss.utils import (
     very_hard_QECCS,
 )
 from spidercss.stim_utils import make_stim_circ_noisy, get_cnot_depth
-from spidercss.qubit_reuse import build_circuit_dag, dag_to_circuit
 from spidercss.lut_decoder import LutDecoder
 
 CP_SAT_SEED_MODULUS = 2**31 - 1
@@ -125,7 +122,7 @@ def run_simulation(code, method_name, circ_with_reuse, scheduled_circ, H_x, H_z,
     total_shots = 0
     total_flagged = 0
     total_discarded = 0
-    total_incorrect = 0
+    total_incorrect = 0 if estimate_ler else None
 
     if os.path.exists(csv_file):
         df = pd.read_csv(csv_file)
@@ -133,7 +130,7 @@ def run_simulation(code, method_name, circ_with_reuse, scheduled_circ, H_x, H_z,
             total_shots = int(df['total_shots'].sum())
             total_flagged = int(df['num_flagged'].sum())
             total_discarded = int(df['num_discarded'].sum())
-            total_incorrect = int(df['num_incorrect'].sum())
+            total_incorrect = int(df['num_incorrect'].sum()) if estimate_ler else None
 
     remaining_samples = max(0, num_samples - total_shots)
 
@@ -265,28 +262,41 @@ def benchmark_state_prep(
     # ==========================
     print(f"[{code}] Loading FAO circuits...")
     try:
-        fao_circ = load_FAO_circ(code)
-
-        # 1. Max Reuse
-        fao_max = plan_resource_aware_reuse(fao_circ, n_data, heuristic="decross_greedy", target=ReuseTarget.QUBITS)
-        num_qubits_max_fao = fao_max.circuit.num_qubits
-        depth_max_fao = get_cnot_depth(fao_max.circuit)
+        # 1. Max Reuse (loaded from assets/circuits/FAO/{code}_qubits.stim)
+        fao_max = load_FAO_circ(code, "qubits")
+        num_qubits_max_fao = fao_max.num_qubits
+        depth_max_fao = get_cnot_depth(fao_max)
         print(f"[{code} FaO] Max Reuse -> Qubits: {num_qubits_max_fao}, Depth: {depth_max_fao}")
 
-        # 2. Min Reuse
-        fao_min = plan_resource_aware_reuse(fao_circ, n_data, heuristic="naive", target=ReuseTarget.QUBITS)
-        num_qubits_min_fao = fao_min.circuit.num_qubits
-        depth_min_fao = get_cnot_depth(fao_min.circuit)
+        # 2. Min Reuse (loaded from assets/circuits/FAO/{code}_depth.stim)
+        fao_min = load_FAO_circ(code, "depth")
+        num_qubits_min_fao = fao_min.num_qubits
+        depth_min_fao = get_cnot_depth(fao_min)
         print(f"[{code} FaO] Min Reuse -> Qubits: {num_qubits_min_fao}, Depth: {depth_min_fao}")
 
-        # 3. No Reuse (Exact Scheduled)
-        fao_dag = build_circuit_dag(fao_circ)
-        fao_scheduled, _ = dag_to_circuit(fao_dag, heuristic=heuristic, random_seed=seed_val)
+        # 3. No Reuse (Scheduled) - loaded from assets/circuits/FAO/{code}_scheduled.stim
+        fao_scheduled = load_FAO_circ(code, "scheduled")
 
-        stats_fao = run_simulation(code, "FaO", fao_circ, fao_scheduled, H_x, H_z, L_z, max_weight, p, num_samples, estimate_ler, num_qubits_max_fao, depth_max_fao, num_qubits_min_fao, depth_min_fao)
+        stats_fao = run_simulation(
+            code,
+            "FaO",
+            fao_scheduled,
+            fao_scheduled,
+            H_x,
+            H_z,
+            L_z,
+            max_weight,
+            p,
+            num_samples,
+            estimate_ler,
+            num_qubits_max_fao,
+            depth_max_fao,
+            num_qubits_min_fao,
+            depth_min_fao,
+        )
         all_stats.append(stats_fao)
-    except Exception:
-        print(f"[{code}] Loading FAO circuit failed...")
+    except FileNotFoundError:
+        print(f"[{code}] No FAO circuit found, skipping FaO benchmark...")
 
     # ==========================
     # SpiderCSS Processing
@@ -357,7 +367,7 @@ def benchmark_triorthogonal_codes(routing_heuristics=None):
 
 
 def benchmark_simple_codes(routing_heuristics=None):
-    return benchmark(FAO_simp_QECCS(), 0.001, num_samples=lambda d: 250_000_000 if d < 5 else 500_000_000, estimate_ler=True, routing_heuristics=routing_heuristics)
+    return benchmark(FAO_simp_QECCS(), 0.001, num_samples=lambda d: 500_000_000 if d < 5 else 1_000_000_000, estimate_ler=True, routing_heuristics=routing_heuristics)
 
 
 def benchmark_hard_codes(routing_heuristics=None):

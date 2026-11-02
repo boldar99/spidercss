@@ -19,6 +19,7 @@ from spidercss.cat_at_origin import cat_at_origin
 from spidercss.hook_errors import characterize_stabilizer_splits
 from spidercss.optimize_parity_matrix import row_optimize_matrix
 from spidercss.qubit_reuse import build_circuit_dag, dag_to_circuit
+from spidercss.resource_scheduling import plan_resource_aware_reuse
 from spidercss.resource_targets import ReuseTarget
 from spidercss.stim_utils import get_cnot_depth
 from spidercss.utils import (
@@ -47,6 +48,10 @@ DEFAULT_ROUTING_HEURISTICS = ("active_spider_first",)
 
 def get_spidercss_circuits_dir() -> Path:
     return get_project_root().joinpath("assets", "circuits", "SpiderCSS")
+
+
+def get_fao_circuits_dir() -> Path:
+    return get_project_root().joinpath("assets", "circuits", "FAO")
 
 
 def extract_scheduled_circuit_from_json(stats: dict) -> stim.Circuit:
@@ -85,8 +90,9 @@ def extract_scheduled_circuit_from_json(stats: dict) -> stim.Circuit:
 def extract_circuits_from_simulation_results(
     results_dir: Path | str | None = None,
     output_dir: Path | str | None = None,
+    fao_output_dir: Path | str | None = None,
 ) -> list[Path]:
-    """Extracts SpiderCSS scheduled circuits from simulation_results/*.json into assets/circuits/SpiderCSS."""
+    """Extracts scheduled SpiderCSS and FaO circuits from simulation_results/*.json."""
     if results_dir is None:
         results_dir = get_project_root().joinpath("simulation_results")
     else:
@@ -97,28 +103,45 @@ def extract_circuits_from_simulation_results(
     else:
         output_dir = Path(output_dir)
 
+    if fao_output_dir is None:
+        fao_output_dir = get_fao_circuits_dir()
+    else:
+        fao_output_dir = Path(fao_output_dir)
+
     output_dir.mkdir(parents=True, exist_ok=True)
+    fao_output_dir.mkdir(parents=True, exist_ok=True)
 
     candidates: dict[tuple[str, str], list[tuple[int, float, dict]]] = defaultdict(list)
+    fao_candidates: dict[str, list[tuple[int, float, dict]]] = defaultdict(list)
     for json_path in sorted(glob.glob(str(results_dir.joinpath("*.json")))):
         with open(json_path, "r") as f:
             stats = json.load(f)
 
         method = stats.get("method", "")
-        if not method.startswith("SpiderCSS"):
-            continue
-
         perfect_str = stats.get("perfect_stim", "")
         if "R_XX" in perfect_str:
             continue
 
         code = stats["code"]
-        routing_heuristic = method.replace("SpiderCSS (", "").replace(")", "").strip()
         num_samples = int(stats.get("num_samples", 0) or 0)
         mtime = os.path.getmtime(json_path)
-        candidates[(code, routing_heuristic)].append((num_samples, mtime, stats))
+
+        if method == "FaO":
+            fao_candidates[code].append((num_samples, mtime, stats))
+        elif method.startswith("SpiderCSS"):
+            routing_heuristic = method.replace("SpiderCSS (", "").replace(")", "").strip()
+            candidates[(code, routing_heuristic)].append((num_samples, mtime, stats))
 
     saved_files: list[Path] = []
+    for code, records in sorted(fao_candidates.items()):
+        _, _, best_stats = max(records, key=lambda item: (item[0], item[1]))
+        sched_circ = extract_scheduled_circuit_from_json(best_stats)
+        out_path = fao_output_dir.joinpath(f"{code}_scheduled.stim")
+        with open(out_path, "w") as f:
+            f.write(str(sched_circ) + "\n")
+        saved_files.append(out_path)
+        print(f"Extracted FAO/{out_path.name} (hash={best_stats.get('circuit_hash')}, samples={best_stats.get('num_samples')})")
+
     for (code, routing_heuristic), records in sorted(candidates.items()):
         # Prefer the run with the most samples, breaking ties by most recent file modification time
         _, _, best_stats = max(records, key=lambda item: (item[0], item[1]))
@@ -127,9 +150,103 @@ def extract_circuits_from_simulation_results(
         with open(out_path, "w") as f:
             f.write(str(sched_circ) + "\n")
         saved_files.append(out_path)
-        print(f"Extracted {out_path.name} (hash={best_stats.get('circuit_hash')}, samples={best_stats.get('num_samples')})")
+        print(f"Extracted SpiderCSS/{out_path.name} (hash={best_stats.get('circuit_hash')}, samples={best_stats.get('num_samples')})")
 
     return saved_files
+
+
+def generate_fao_circuits_for_code(
+    code: str,
+    schedule_heuristic: str | None = None,
+    output_dir: Path | str | None = None,
+    generate_reuse_variants: bool = True,
+    generate_scheduled_variants: bool = True,
+    overwrite: bool = True,
+) -> dict[str, Path]:
+    """Generates and saves FAO circuits (qubits, depth, and scheduled) for a code if a base FAO circuit exists."""
+    if output_dir is None:
+        output_dir = get_fao_circuits_dir()
+    else:
+        output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    base_fao_path = output_dir.joinpath(f"{code}.stim")
+    if not base_fao_path.exists():
+        return {}
+
+    very_hard = set(very_hard_QECCS())
+    if schedule_heuristic is None:
+        schedule_heuristic = "greedy" if code in very_hard else "exact"
+
+    qubits_path = output_dir.joinpath(f"{code}_qubits.stim")
+    depth_path = output_dir.joinpath(f"{code}_depth.stim")
+    sched_path = output_dir.joinpath(f"{code}_scheduled.stim")
+
+    need_reuse = generate_reuse_variants and (
+        overwrite or not (qubits_path.exists() and depth_path.exists())
+    )
+    need_sched = generate_scheduled_variants and (
+        overwrite or not sched_path.exists()
+    )
+
+    saved: dict[str, Path] = {}
+    if not need_reuse and not need_sched:
+        if generate_reuse_variants:
+            saved["fao_qubits"] = qubits_path
+            saved["fao_depth"] = depth_path
+        if generate_scheduled_variants:
+            saved["fao_scheduled"] = sched_path
+        return saved
+
+    seed_val = int(hashlib.sha256(code.encode()).hexdigest()[:8], 16) % CP_SAT_SEED_MODULUS
+    try:
+        _, H_x, _, _, _, _ = load_qecc(code, "FAO")
+    except FileNotFoundError:
+        _, H_x, _, _, _, _ = load_qecc(code)
+    n_data = H_x.shape[1]
+
+    fao_circ = load_FAO_circ(code)
+
+    if generate_reuse_variants:
+        if overwrite or not qubits_path.exists():
+            print(f"[{code}] Generating FAO Max Reuse (qubits) circuit...")
+            fao_max = plan_resource_aware_reuse(
+                fao_circ, n_data, heuristic="decross_greedy", target=ReuseTarget.QUBITS
+            ).circuit
+            with open(qubits_path, "w") as f:
+                f.write(str(fao_max) + "\n")
+            print(
+                f"[{code} FaO] Max Reuse -> Qubits: {fao_max.num_qubits}, "
+                f"Depth: {get_cnot_depth(fao_max)} (saved to FAO/{qubits_path.name})"
+            )
+        saved["fao_qubits"] = qubits_path
+
+        if overwrite or not depth_path.exists():
+            print(f"[{code}] Generating FAO Min Reuse (depth) circuit...")
+            fao_min = plan_resource_aware_reuse(
+                fao_circ, n_data, heuristic="naive", target=ReuseTarget.QUBITS
+            ).circuit
+            with open(depth_path, "w") as f:
+                f.write(str(fao_min) + "\n")
+            print(
+                f"[{code} FaO] Min Reuse -> Qubits: {fao_min.num_qubits}, "
+                f"Depth: {get_cnot_depth(fao_min)} (saved to FAO/{depth_path.name})"
+            )
+        saved["fao_depth"] = depth_path
+
+    if generate_scheduled_variants:
+        if overwrite or not sched_path.exists():
+            print(f"[{code}] Generating FAO scheduled circuit...")
+            fao_dag = build_circuit_dag(fao_circ)
+            fao_scheduled, _ = dag_to_circuit(
+                fao_dag, heuristic=schedule_heuristic, random_seed=seed_val
+            )
+            with open(sched_path, "w") as f:
+                f.write(str(fao_scheduled) + "\n")
+            print(f"[{code} FaO] Saved scheduled circuit to FAO/{sched_path.name}")
+        saved["fao_scheduled"] = sched_path
+
+    return saved
 
 
 def generate_circuits_for_code(
@@ -137,11 +254,30 @@ def generate_circuits_for_code(
     routing_heuristics: Sequence[str] = DEFAULT_ROUTING_HEURISTICS,
     schedule_heuristic: str | None = None,
     output_dir: Path | str | None = None,
+    fao_output_dir: Path | str | None = None,
     generate_reuse_variants: bool = True,
     generate_scheduled_variants: bool = True,
+    include_fao: bool = True,
+    include_spidercss: bool = True,
     overwrite: bool = True,
 ) -> dict[str, Path]:
-    """Synthesizes and saves SpiderCSS circuits (qubits, depth, and scheduled routing variants) for a code."""
+    """Synthesizes and saves FAO and SpiderCSS circuits (qubits, depth, and scheduled variants) for a code."""
+    saved: dict[str, Path] = {}
+    if include_fao:
+        saved.update(
+            generate_fao_circuits_for_code(
+                code=code,
+                schedule_heuristic=schedule_heuristic,
+                output_dir=fao_output_dir,
+                generate_reuse_variants=generate_reuse_variants,
+                generate_scheduled_variants=generate_scheduled_variants,
+                overwrite=overwrite,
+            )
+        )
+
+    if not include_spidercss:
+        return saved
+
     if output_dir is None:
         output_dir = get_spidercss_circuits_dir()
     else:
@@ -166,9 +302,8 @@ def generate_circuits_for_code(
         overwrite or not path.exists() for path in sched_paths.values()
     )
 
-    saved: dict[str, Path] = {}
     if not need_reuse and not need_sched:
-        print(f"[{code}] All requested circuits already exist in {output_dir}, skipping.")
+        print(f"[{code}] All requested SpiderCSS circuits already exist in {output_dir}, skipping.")
         if generate_reuse_variants:
             saved["qubits"] = qubits_path
             saved["depth"] = depth_path
@@ -281,8 +416,11 @@ def _generate_worker(args):
         routing_heuristics,
         schedule_heuristic,
         output_dir,
+        fao_output_dir,
         generate_reuse_variants,
         generate_scheduled_variants,
+        include_fao,
+        include_spidercss,
         overwrite,
     ) = args
     return code, generate_circuits_for_code(
@@ -290,8 +428,11 @@ def _generate_worker(args):
         routing_heuristics=routing_heuristics,
         schedule_heuristic=schedule_heuristic,
         output_dir=output_dir,
+        fao_output_dir=fao_output_dir,
         generate_reuse_variants=generate_reuse_variants,
         generate_scheduled_variants=generate_scheduled_variants,
+        include_fao=include_fao,
+        include_spidercss=include_spidercss,
         overwrite=overwrite,
     )
 
@@ -301,8 +442,11 @@ def generate_circuits(
     routing_heuristics: Sequence[str] = DEFAULT_ROUTING_HEURISTICS,
     schedule_heuristic: str | None = None,
     output_dir: Path | str | None = None,
+    fao_output_dir: Path | str | None = None,
     generate_reuse_variants: bool = True,
     generate_scheduled_variants: bool = True,
+    include_fao: bool = True,
+    include_spidercss: bool = True,
     overwrite: bool = True,
     max_workers: int = 1,
 ) -> dict[str, dict[str, Path]]:
@@ -316,8 +460,11 @@ def generate_circuits(
                 routing_heuristics=routing_heuristics,
                 schedule_heuristic=schedule_heuristic,
                 output_dir=output_dir,
+                fao_output_dir=fao_output_dir,
                 generate_reuse_variants=generate_reuse_variants,
                 generate_scheduled_variants=generate_scheduled_variants,
+                include_fao=include_fao,
+                include_spidercss=include_spidercss,
                 overwrite=overwrite,
             )
     else:
@@ -327,8 +474,11 @@ def generate_circuits(
                 tuple(routing_heuristics),
                 schedule_heuristic,
                 str(output_dir) if output_dir is not None else None,
+                str(fao_output_dir) if fao_output_dir is not None else None,
                 generate_reuse_variants,
                 generate_scheduled_variants,
+                include_fao,
+                include_spidercss,
                 overwrite,
             )
             for code in codes
@@ -366,7 +516,7 @@ def generate_all_circuits(**kwargs):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="Generate or extract SpiderCSS fault-tolerant state preparation circuits."
+        description="Generate or extract FAO and SpiderCSS fault-tolerant state preparation circuits."
     )
     parser.add_argument(
         "--codes",
@@ -401,6 +551,16 @@ if __name__ == "__main__":
         help="Only generate the scheduled no-reuse circuits.",
     )
     parser.add_argument(
+        "--fao-only",
+        action="store_true",
+        help="Only generate FAO circuits.",
+    )
+    parser.add_argument(
+        "--spidercss-only",
+        action="store_true",
+        help="Only generate SpiderCSS circuits.",
+    )
+    parser.add_argument(
         "--no-overwrite",
         action="store_true",
         help="Do not overwrite existing .stim circuit files.",
@@ -416,7 +576,7 @@ if __name__ == "__main__":
     if args.extract_from_results:
         extract_circuits_from_simulation_results()
 
-    if not args.extract_from_results or args.reuse_only or args.scheduled_only or args.codes:
+    if not args.extract_from_results or args.reuse_only or args.scheduled_only or args.fao_only or args.spidercss_only or args.codes:
         heuristics = ALL_ROUTING_HEURISTICS if args.all_heuristics else tuple(args.heuristics)
         target_codes = (
             args.codes
@@ -428,6 +588,8 @@ if __name__ == "__main__":
             routing_heuristics=heuristics,
             generate_reuse_variants=not args.scheduled_only,
             generate_scheduled_variants=not args.reuse_only,
+            include_fao=not args.spidercss_only,
+            include_spidercss=not args.fao_only,
             overwrite=not args.no_overwrite,
             max_workers=args.workers,
         )

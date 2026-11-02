@@ -312,12 +312,20 @@ def get_project_root() -> Path:
     return Path(__file__).parent
 
 
-def load_FAO_circ(code: str) -> stim.Circuit:
+def load_FAO_circ(code: str, variant: str | None = None) -> stim.Circuit:
+    root = get_project_root()
+    if variant is not None:
+        file = root.joinpath("assets", "circuits", "FAO", f"{code}_{variant}.stim")
+        if not file.exists():
+            raise FileNotFoundError(file)
+        return stim.Circuit.from_file(file)
+
     from spidercss.stim_utils import remove_FAO_data_measurements, permute_qubits, fix_FAO_flags
     n, _, _ = get_n_k_d(code + ".json")
 
-    root = get_project_root()
     file = root.joinpath("assets", "circuits", "FAO", f"{code}.stim")
+    if not file.exists():
+        raise FileNotFoundError(file)
     circ = stim.Circuit.from_file(file)
     circ = fix_FAO_flags(circ, circ.num_qubits - n)
     circ.insert(0, stim.CircuitInstruction("R", range(circ.num_qubits)))
@@ -330,6 +338,8 @@ def load_SpiderCSS_circ(code: str, variant: str = "active_spider_first") -> stim
     root = get_project_root()
     filename = f"{code}_{variant}.stim" if variant else f"{code}.stim"
     file = root.joinpath("assets", "circuits", "SpiderCSS", filename)
+    if not file.exists():
+        raise FileNotFoundError(file)
     return stim.Circuit.from_file(file)
 
 
