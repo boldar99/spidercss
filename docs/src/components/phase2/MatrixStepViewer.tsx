@@ -285,11 +285,14 @@ export const MatrixStepViewer: React.FC<MatrixStepViewerProps> = ({
                     <div>
                       q<sub>{qIdx}</sub>
                     </div>
-                    {stage === 2 || stage === 3 ? (
-                      <div className="text-[9px] text-slate-400 font-normal">
-                        π[{cIdx}]
-                      </div>
-                    ) : null}
+                    <div
+                      className={`text-[9px] text-slate-400 font-normal ${
+                        stage === 2 || stage === 3 ? '' : 'invisible'
+                      }`}
+                      aria-hidden={stage !== 2 && stage !== 3}
+                    >
+                      π[{cIdx}]
+                    </div>
                   </th>
                 );
               })}
