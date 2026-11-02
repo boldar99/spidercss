@@ -36,11 +36,11 @@ from spidercss.lut_decoder import LutDecoder
 CP_SAT_SEED_MODULUS = 2**31 - 1
 
 BENCHMARK_ROUTING_HEURISTICS = (
-    # "joint_resource",
-    # "critical_path_first",
-    # "earliest_start_first",
+    "joint_resource",
+    "critical_path_first",
+    "earliest_start_first",
     "active_spider_first",
-    # "sa_sequence_distance",
+    "sa_sequence_distance",
 )
 
 _ESTIMATE_LER = True
@@ -367,7 +367,7 @@ def benchmark_triorthogonal_codes(routing_heuristics=None):
 
 
 def benchmark_simple_codes(routing_heuristics=None):
-    return benchmark(FAO_simp_QECCS(), 0.001, num_samples=lambda d: 500_000_000 if d < 5 else 1_000_000_000, estimate_ler=True, routing_heuristics=routing_heuristics)
+    return benchmark(FAO_simp_QECCS(), 0.001, num_samples=lambda d: 200_000_000 if d < 5 else 500_000_000, estimate_ler=True, routing_heuristics=routing_heuristics)
 
 
 def benchmark_hard_codes(routing_heuristics=None):
