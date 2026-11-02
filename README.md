@@ -16,7 +16,8 @@ For theoretical foundations and benchmark evaluations, see our paper:
 
 ### Installation
 
-Clone the repository and install `spidercss` into your Python virtual environment:
+SpiderCSS requires **Python $\ge 3.10$**.
+Clone the repository and install the pinned dependencies into your virtual or Conda environment:
 
 ```bash
 git clone https://github.com/boldar99/spidercss.git
@@ -77,6 +78,78 @@ print(f"Logical Bell circuit synthesized with {bell_circuit.num_qubits} physical
 
 ---
 
+## 📊 Reproducing Paper Results (Table I, Figures & FT Verification)
+
+All pre-synthesized circuits (`spidercss/assets/circuits/SpiderCSS/` and `spidercss/assets/circuits/FAO/`) and Monte Carlo simulation outputs (`spidercss/simulation_results/`) are deposited in the repository.
+Circuit generation, Monte Carlo benchmarking, fault-tolerance verification, and table/plot generation are decoupled so you can either regenerate Table I instantaneously from deposited data or run the full pipeline end-to-end.
+
+### 1. Instant Reproduction from Deposited Data (< 5 seconds)
+
+Regenerate the exact LaTeX source for **Table I** and the paper figures in `spidercss/plots/` directly from `spidercss/simulation_results/`:
+
+```bash
+# Print the LaTeX source for Table I
+python -m spidercss.generate_table
+
+# Regenerate benchmark comparison plots in spidercss/plots/
+python -m spidercss.visualize
+```
+
+### 2. Exact Fault-Tolerance Verification (~20 seconds)
+
+Verify the fault tolerance ($t = \lfloor d / 2 \rfloor$) of the SpiderCSS state preparation circuits from Table I:
+
+```bash
+# Verify all best Table I circuits up to n = 31 qubits (7_1_3 through 31_1_7)
+python -m spidercss.fault_tolerance_verification --max_qubits 31
+
+# Or verify specific codes (including X-basis |+> states such as 49_1_5)
+python -m spidercss.fault_tolerance_verification --codes 7_1_3 9_1_3 17_1_5 49_1_5
+```
+
+### 3. Pre-Generating Deposited Circuits (`generate_circuit.py`)
+
+All three circuit variants per code are deposited in `spidercss/assets/circuits/SpiderCSS/` and `spidercss/assets/circuits/FAO/`:
+- `{code}_qubits.stim`: Maximum qubit reuse (`ReuseTarget.QUBITS`, minimizing simultaneous physical qubits).
+- `{code}_depth.stim`: Minimum qubit reuse (`ReuseTarget.DEPTH`, minimizing CNOT depth).
+- `{code}_{routing_heuristic}.stim` (SpiderCSS) and `{code}_scheduled.stim` (FAO): Scheduled no-reuse circuits used for Monte Carlo logical error rate (LER) and acceptance rate (AR) simulations.
+
+To re-synthesize the circuits from the code parity-check matrices in `spidercss/assets/qeccs/` (using deterministic per-code SHA-256 seeds `int(sha256(code)[:8], 16) % (2**31 - 1)`):
+
+```bash
+# Generate circuits for specific codes (e.g. distance 3 and 5 codes; ~10 seconds)
+python -m spidercss.generate_circuit --codes 7_1_3 9_1_3 17_1_5 25_1_5
+
+# Generate all 18 benchmark codes across all 5 routing heuristics (~10–15 minutes with 4 workers)
+python -m spidercss.generate_circuit --all-heuristics --workers 4
+
+# Or extract the exact scheduled circuits directly from simulation_results/*.json (< 5 seconds)
+python -m spidercss.generate_circuit --extract-from-results
+```
+
+### 4. Running Monte Carlo Benchmarks (`benchmark.py`)
+
+`spidercss/benchmark.py` loads the pre-generated `.stim` circuits directly from `spidercss/assets/circuits/` (requiring zero circuit synthesis or CP-SAT scheduling at benchmark time) and caches shot counts in `spidercss/simulation_results/{code}_{circuit_hash}.csv`:
+
+```bash
+# Benchmark specific codes (hits cached CSV results immediately if requested samples <= cached samples)
+python -m spidercss.benchmark --codes 7_1_3 17_1_5 144_12_12
+
+# Run a quick fresh simulation override with custom sample count and error rate (~5 seconds)
+python -m spidercss.benchmark --codes 7_1_3 9_1_3 --samples 1000000 --p 0.001
+
+# Benchmark all deposited routing heuristics for selected codes
+python -m spidercss.benchmark --codes 17_1_5 25_1_5 --all-heuristics
+```
+
+### 5. Running the Test Suite
+
+```bash
+python -m unittest discover -s tests
+```
+
+---
+
 ## 📓 Interactive Notebook Tutorials & Demos
 
 Interactive tutorials and research workflows are located in the [`notebooks/`](notebooks) directory:
@@ -96,24 +169,28 @@ If you are exploring the source code or building upon SpiderCSS, here is a map o
 
 ```
 spidercss/
-├── cat_at_origin.py            # Primary entrypoint: end-to-end cat-at-origin state synthesis
-├── css_state.py                # Multi-block logical CSS state compiler (prepare_css_state)
-├── well_ordered_cat_state.py   # Fault-tolerant cat-state topologies with hook-error bounds
-├── joint_extraction_planner.py # Algorithm 1 joint graph synthesis & bipartite scheduling
-├── spider_leg_matcher.py       # Bipartite matching & causal dependency resolution
-├── circuit_extraction.py       # Circuit extraction engine (CatStateExtractor & StimBuilder)
-├── qubit_reuse.py              # Qubit reuse models & schedule compaction algorithms
-├── resource_scheduling.py      # Heuristic & ILP schedulers (decross_greedy, min_qubits, etc.)
-├── resource_targets.py         # ReuseTarget definitions (NONE, DEPTH, QUBITS, BALANCED)
-├── optimize_parity_matrix.py   # Parity check matrix Gaussian elimination & basis optimizer
-├── hook_errors.py              # Safe stabilizer split analysis & fault-propagation tracking
-├── stim_utils.py               # Stim circuit utilities, CNOT depth, and gate layer calculation
-├── generate_circuit.py         # Synthesizes and deposits SpiderCSS benchmark circuits (.stim)
-├── benchmark.py                # Monte Carlo threshold simulations (Stim & Sinter pipelines)
-├── lut_decoder.py              # Fast lookup-table decoder for distance-3 and distance-5 codes
-├── visualize.py / draw.py      # Graph, DAG, and circuit diagram visualizers
-├── assets/circuits/            # Deposited .stim circuits for SpiderCSS and Flag at Origin (FAO)
-└── assets/qeccs/               # Library of pre-computed CSS codes (FAO, MQT, and miscellaneous families)
+├── cat_at_origin.py                  # Primary entrypoint: end-to-end cat-at-origin state synthesis
+├── css_state.py                      # Multi-block logical CSS state compiler (prepare_css_state)
+├── well_ordered_cat_state.py         # Fault-tolerant cat-state topologies with hook-error bounds
+├── joint_extraction_planner.py       # Algorithm 1 joint graph synthesis & bipartite scheduling
+├── spider_leg_matcher.py             # Bipartite matching & causal dependency resolution
+├── circuit_extraction.py             # Circuit extraction engine (CatStateExtractor & StimBuilder)
+├── qubit_reuse.py                    # Qubit reuse models & schedule compaction algorithms
+├── resource_scheduling.py            # Heuristic & ILP schedulers (decross_greedy, min_qubits, etc.)
+├── resource_targets.py               # ReuseTarget definitions (NONE, DEPTH, QUBITS, BALANCED)
+├── optimize_parity_matrix.py         # Parity check matrix Gaussian elimination & basis optimizer
+├── hook_errors.py                    # Safe stabilizer split analysis & fault-propagation tracking
+├── stim_utils.py                     # Stim circuit utilities, CNOT depth, and gate layer calculation
+├── generate_circuit.py               # Synthesizes and deposits SpiderCSS & FAO circuits (.stim)
+├── benchmark.py                      # Monte Carlo threshold & LER/AR simulations from deposited circuits
+├── fault_tolerance_verification.py   # Exact combinatorial & ILP fault-tolerance verification (verify_ftsp)
+├── generate_table.py                 # Generates the LaTeX source for Table I from simulation_results/
+├── visualize.py                      # Parses simulation_results/ and renders paper figures to plots/
+├── lut_decoder.py                    # Fast lookup-table decoder for code-capacity syndrome decoding
+├── draw.py                           # Graph, DAG, and circuit diagram visualizers
+├── assets/circuits/                  # Deposited .stim circuits for SpiderCSS and Flag at Origin (FAO)
+├── assets/qeccs/                     # Library of pre-computed CSS codes (FAO, MQT, and miscellaneous families)
+└── simulation_results/               # Deposited Monte Carlo simulation JSON summaries and CSV shot caches
 ```
 
 ---
